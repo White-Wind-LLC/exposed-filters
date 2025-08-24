@@ -36,8 +36,9 @@ dependencies {
 - **REST → Core**: parse request into filters
 ```kotlin
 val filter: FilterRequest? = call.receiveFilterRequestOrNull()
-if (filter != null && !filter.isEmpty) {
-    // pass filter.root to JDBC layer
+call.respond {
+    // pass the filters through the service layer to the database layer
+    myService.findAll(filter).toDto() 
 }
 ```
 
@@ -51,6 +52,47 @@ fun findAll(filters: FilterRequest?): List<YourEntity> {
 ```
 
 See more in `rest/README.md`.
+
+## Example: HTTP JSON filter body
+
+This JSON represents an OR-based filter that matches records where `status = ACTIVE` or (`role` is in `{ADMIN, MANAGER}`
+and `name` contains `John`).
+```json
+{
+  "combinator": "OR",
+  "children": [
+    {
+      "filters": {
+        "status": [
+          {
+            "op": "EQ",
+            "value": "ACTIVE"
+          }
+        ]
+      }
+    },
+    {
+      "filters": {
+        "role": [
+          {
+            "op": "IN",
+            "values": [
+              "ADMIN",
+              "MANAGER"
+            ]
+          }
+        ],
+        "name": [
+          {
+            "op": "CONTAINS",
+            "value": "John"
+          }
+        ]
+      }
+    }
+  ]
+}
+```
 
 ## CI and Release
 
