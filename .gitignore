@@ -1,0 +1,12 @@
+.gradle/
+build/
+**/build/
+.out/
+.idea/
+*.iml
+.gradle/**
+local.properties
+.gradle/daemon/
+.gradle/caches/
+.gradle/kotlin/
+**/.DS_Store
