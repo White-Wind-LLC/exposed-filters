@@ -7,9 +7,9 @@ Type-safe, normalized filter model and utilities for building dynamic queries wi
     - `jdbc` – translation of filters to Exposed DSL predicates
     - `rest` – Ktor helpers to parse HTTP JSON bodies into `FilterRequest`
 - **Artifacts** (Maven Central):
-    - `ua.wwind:exposed-filters-core:<version>`
-    - `ua.wwind:exposed-filters-jdbc:<version>`
-    - `ua.wwind:exposed-filters-rest:<version>`
+    - `ua.wwind.exposed-filters:exposed-filters-core:<version>`
+    - `ua.wwind.exposed-filters:exposed-filters-jdbc:<version>`
+    - `ua.wwind.exposed-filters:exposed-filters-rest:<version>`
 
 ## Installation
 
@@ -17,9 +17,9 @@ Prerequisites: Kotlin 2.2.0, repository `mavenCentral()`.
 
 ```kotlin
 dependencies {
-    implementation("ua.wwind:exposed-filters-core:1.0.0")
-    implementation("ua.wwind:exposed-filters-jdbc:1.0.0")
-    implementation("ua.wwind:exposed-filters-rest:1.0.0")
+    implementation("ua.wwind.exposed-filters:exposed-filters-core:1.0.0")
+    implementation("ua.wwind.exposed-filters:exposed-filters-jdbc:1.0.0")
+    implementation("ua.wwind.exposed-filters:exposed-filters-rest:1.0.0")
 }
 ```
 
