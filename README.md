@@ -1,5 +1,7 @@
 # Exposed ORM Universal Filters
 
+[![Maven Central](https://img.shields.io/maven-central/v/ua.wwind.exposed-filters/exposed-filters-core)](https://central.sonatype.com/artifact/ua.wwind.exposed-filters/exposed-filters-core)
+
 Type-safe, normalized filter model and utilities for building dynamic queries with JetBrains Exposed and Ktor.
 
 - **Modules**:
@@ -17,9 +19,9 @@ Prerequisites: Kotlin 2.2.0, repository `mavenCentral()`.
 
 ```kotlin
 dependencies {
-    implementation("ua.wwind.exposed-filters:exposed-filters-core:1.0.0")
-    implementation("ua.wwind.exposed-filters:exposed-filters-jdbc:1.0.0")
-    implementation("ua.wwind.exposed-filters:exposed-filters-rest:1.0.0")
+    implementation("ua.wwind.exposed-filters:exposed-filters-core:1.0.1")
+    implementation("ua.wwind.exposed-filters:exposed-filters-jdbc:1.0.1")
+    implementation("ua.wwind.exposed-filters:exposed-filters-rest:1.0.1")
 }
 ```
 
