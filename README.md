@@ -23,6 +23,12 @@ dependencies {
 }
 ```
 
+## Compatibility
+
+| Library version | Kotlin    | Ktor      | Exposed          |
+|-----------------|-----------|-----------|------------------|
+| <= 1.0.1        | \>= 2.2.0 | \>= 3.2.3 | \>= 1.0.0-beta-1 |
+
 ## Quick start
 
 - **REST → Core**: parse request into filters
