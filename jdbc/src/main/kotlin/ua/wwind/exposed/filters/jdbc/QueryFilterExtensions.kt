@@ -28,8 +28,8 @@ import ua.wwind.exposed.filters.core.FilterRequest
 import java.util.*
 
 public fun Query.applyFiltersOn(table: Table, filterRequest: FilterRequest?): Query {
-    if (filterRequest == null || filterRequest.isEmpty) return this
-    val root = filterRequest.root ?: return this
+    if (filterRequest == null) return this
+    val root = filterRequest.root
     val columns = table.columns.associateBy { it.name }
     val predicate = nodeToPredicate(root, columns) ?: return this
     return andWhere { predicate }

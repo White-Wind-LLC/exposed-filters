@@ -21,6 +21,4 @@ public data class FilterGroup(
     val children: List<FilterNode>
 ) : FilterNode
 
-public data class FilterRequest(val root: FilterNode?) {
-    public val isEmpty: Boolean get() = root == null
-}
+public data class FilterRequest(val root: FilterNode)
