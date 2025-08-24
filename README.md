@@ -4,6 +4,10 @@
 
 Type-safe, normalized filter model and utilities for building dynamic queries with JetBrains Exposed and Ktor.
 
+- Accept filters as JSON, parse them into a normalized filter tree, and safely apply them to Exposed queries.
+- Strong typing and SQL injection safety via Exposed DSL.
+- Flexible: use flat or nested (tree) filter structures with AND/OR combinators.
+
 - **Modules**:
     - `core` – domain model (`FilterOperator`, `FilterNode`, normalization utils)
     - `jdbc` – translation of filters to Exposed DSL predicates
@@ -33,66 +37,104 @@ dependencies {
 
 ## Quick start
 
-- **REST → Core**: parse request into filters
+### 1) Define your table (Exposed)
+
 ```kotlin
-val filter: FilterRequest? = call.receiveFilterRequestOrNull()
-call.respond {
-    // pass the filters through the service layer to the database layer
-    myService.findAll(filter).toDto() 
+object Users : Table("users") {
+    val id: Column<Int> = integer("id").autoIncrement()
+    val name: Column<String> = varchar("name", 100)
+    val age: Column<Int> = integer("age")
+    override val primaryKey = PrimaryKey(id)
 }
 ```
 
-- **Core → JDBC (Exposed DSL)**: apply filters to a query
+### 2) Ktor endpoint: receive filters and apply to query
+
 ```kotlin
-fun findAll(filters: FilterRequest?): List<YourEntity> {
-    return YourTable.selectAll().applyFiltersOn(YourTable, filters).map { row ->
-        row.toYourEntity()
+routing {
+    post("/users") {
+        val filter = call.receiveFilterRequestOrNull()
+        val result = transaction {
+            Users
+                .selectAll()
+                .applyFiltersOn(Users, filter)
+                .map { row ->
+                    mapOf(
+                        "id" to row[Users.id],
+                        "name" to row[Users.name],
+                        "age" to row[Users.age]
+                    )
+                }
+        }
+        call.respond(result)
     }
 }
 ```
 
-See more in `rest/README.md`.
+## JSON request format
 
-## Example: HTTP JSON filter body
+You can send a flat structure or a nested tree. Both parse into a `FilterRequest`.
 
-This JSON represents an OR-based filter that matches records where `status = ACTIVE` or (`role` is in `{ADMIN, MANAGER}`
-and `name` contains `John`).
+### Flat (single level)
+
+```json
+{
+  "combinator": "AND",
+  "filters": {
+    "name": [{ "op": "CONTAINS", "value": "Al" }],
+    "age":  [{ "op": "GTE", "value": "18" }]
+  }
+}
+```
+
+### Tree (nested groups)
+
 ```json
 {
   "combinator": "OR",
   "children": [
-    {
-      "filters": {
-        "status": [
-          {
-            "op": "EQ",
-            "value": "ACTIVE"
-          }
-        ]
-      }
-    },
-    {
-      "filters": {
-        "role": [
-          {
-            "op": "IN",
-            "values": [
-              "ADMIN",
-              "MANAGER"
-            ]
-          }
-        ],
-        "name": [
-          {
-            "op": "CONTAINS",
-            "value": "John"
-          }
-        ]
-      }
-    }
+    { "filters": { "age": [{ "op": "BETWEEN", "values": ["18", "25"] }] } },
+    { "filters": { "name": [{ "op": "STARTS_WITH", "value": "Da" }] } }
   ]
 }
 ```
+
+Notes:
+
+- `filters` is a map of field -> list of conditions.
+- Each condition has `op` and either `value` or `values` (depending on operator).
+- `combinator` can be `AND` or `OR`. Omitted combinators default to `AND`.
+- Empty/unknown parts are ignored; if nothing remains after normalization, no filter is applied.
+
+## Supported operators
+
+- Equality: `EQ`, `NEQ`
+- String search: `CONTAINS`, `STARTS_WITH`, `ENDS_WITH`
+- Sets: `IN`, `NOT_IN`
+- Ranges and comparisons: `BETWEEN`, `GT`, `GTE`, `LT`, `LTE`
+- Nullability: `IS_NULL`, `IS_NOT_NULL`
+
+## Type handling (JDBC adapter)
+
+Automatic conversion from JSON strings to column types:
+
+- Int, Long, Short, Double
+- String (`VarChar`, `Text`) with `LIKE` support for the string operators
+- UUID
+- Boolean (`toBooleanStrict()`: only "true"/"false")
+- Enums (by enum constant `name`)
+
+Operator constraints:
+
+- `LIKE`-style operators only for string columns.
+- `BETWEEN` requires exactly two values; not supported for UUID/Enum/Boolean.
+- `IN`/`NOT_IN` requires non-empty values.
+
+## Why use this
+
+- Clear separation: request format → normalized model → SQL predicates.
+- Safer queries by leveraging Exposed DSL.
+- Reusable across endpoints; supports both simple and complex trees of conditions.
 
 ## CI and Release
 
