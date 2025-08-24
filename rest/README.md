@@ -58,7 +58,7 @@ The final result is a minimal `FilterNode` tree or `null` if no valid conditions
 - `FieldFilter`: `{ field: String, operator: FilterOperator, values: List<String> }`.
 - `FilterLeaf`: `{ predicates: List<FieldFilter> }`.
 - `FilterGroup`: `{ combinator: FilterCombinator, children: List<FilterNode> }`.
-- `FilterRequest`: `{ root: FilterNode? }` with `isEmpty` helper.
+- `FilterRequest`: `{ root: FilterNode }`.
 
 ### Parsing characteristics
 
@@ -107,7 +107,7 @@ The final result is a minimal `FilterNode` tree or `null` if no valid conditions
 
 ```kotlin
 val filter: FilterRequest? = call.receiveFilterRequestOrNull()
-if (filter != null && !filter.isEmpty) {
+if (filter != null) {
     // Pass filter.root (FilterLeaf/FilterGroup) to the query-building layer
 }
 ```
