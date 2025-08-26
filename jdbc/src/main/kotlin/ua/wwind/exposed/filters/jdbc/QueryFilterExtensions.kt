@@ -1,39 +1,35 @@
 package ua.wwind.exposed.filters.jdbc
 
-import org.jetbrains.exposed.v1.core.BooleanColumnType
-import org.jetbrains.exposed.v1.core.Column
-import org.jetbrains.exposed.v1.core.DoubleColumnType
-import org.jetbrains.exposed.v1.core.EnumerationNameColumnType
-import org.jetbrains.exposed.v1.core.IntegerColumnType
-import org.jetbrains.exposed.v1.core.LongColumnType
-import org.jetbrains.exposed.v1.core.Op
-import org.jetbrains.exposed.v1.core.ShortColumnType
-import org.jetbrains.exposed.v1.core.SqlExpressionBuilder
-import org.jetbrains.exposed.v1.core.Table
-import org.jetbrains.exposed.v1.core.TextColumnType
-import org.jetbrains.exposed.v1.core.UUIDColumnType
-import org.jetbrains.exposed.v1.core.VarCharColumnType
-import org.jetbrains.exposed.v1.core.and
-import org.jetbrains.exposed.v1.core.not
-import org.jetbrains.exposed.v1.core.or
+import org.jetbrains.exposed.v1.core.*
 import org.jetbrains.exposed.v1.jdbc.Query
 import org.jetbrains.exposed.v1.jdbc.andWhere
-import ua.wwind.exposed.filters.core.FieldFilter
-import ua.wwind.exposed.filters.core.FilterCombinator
-import ua.wwind.exposed.filters.core.FilterGroup
-import ua.wwind.exposed.filters.core.FilterLeaf
-import ua.wwind.exposed.filters.core.FilterNode
-import ua.wwind.exposed.filters.core.FilterOperator
-import ua.wwind.exposed.filters.core.FilterRequest
+import ua.wwind.exposed.filters.core.*
 import java.util.*
+import kotlin.reflect.KProperty1
+import kotlin.reflect.full.memberProperties
+import kotlin.reflect.jvm.isAccessible
 
 public fun Query.applyFiltersOn(table: Table, filterRequest: FilterRequest?): Query {
     if (filterRequest == null) return this
     val root = filterRequest.root
-    val columns = table.columns.associateBy { it.name }
+    val columns = table.propertyToColumnMap()
     val predicate = nodeToPredicate(root, columns) ?: return this
     return andWhere { predicate }
 }
+
+private fun Table.propertyToColumnMap(): Map<String, Column<*>> =
+    this::class.memberProperties
+        .mapNotNull { prop ->
+            @Suppress("UNCHECKED_CAST")
+            val p = prop as? KProperty1<Any, *> ?: return@mapNotNull null
+            // Some properties can be non-public on generated tables; make accessible defensively
+            p.isAccessible = true
+            val value = runCatching { p.get(this) }.getOrNull()
+            if (value is Column<*>) {
+                prop.name to value
+            } else null
+        }
+        .toMap()
 
 private fun nodeToPredicate(node: FilterNode, columns: Map<String, Column<*>>): Op<Boolean>? = when (node) {
     is FilterLeaf -> {
@@ -41,9 +37,7 @@ private fun nodeToPredicate(node: FilterNode, columns: Map<String, Column<*>>): 
         if (parts.isEmpty()) {
             null
         } else {
-            with(SqlExpressionBuilder) {
-                parts.reduce { acc, op -> acc.and(op) }
-            }
+            parts.reduce { acc, op -> acc.and(op) }
         }
     }
 
@@ -52,11 +46,9 @@ private fun nodeToPredicate(node: FilterNode, columns: Map<String, Column<*>>): 
         if (parts.isEmpty()) {
             null
         } else {
-            with(SqlExpressionBuilder) {
-                when (node.combinator) {
-                    FilterCombinator.AND -> parts.reduce { acc, op -> acc.and(op) }
-                    FilterCombinator.OR -> parts.reduce { acc, op -> acc.or(op) }
-                }
+            when (node.combinator) {
+                FilterCombinator.AND -> parts.reduce { acc, op -> acc.and(op) }
+                FilterCombinator.OR -> parts.reduce { acc, op -> acc.or(op) }
             }
         }
     }

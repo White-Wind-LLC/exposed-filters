@@ -23,9 +23,9 @@ Prerequisites: Kotlin 2.2.0, repository `mavenCentral()`.
 
 ```kotlin
 dependencies {
-    implementation("ua.wwind.exposed-filters:exposed-filters-core:1.0.1")
-    implementation("ua.wwind.exposed-filters:exposed-filters-jdbc:1.0.1")
-    implementation("ua.wwind.exposed-filters:exposed-filters-rest:1.0.1")
+    implementation("ua.wwind.exposed-filters:exposed-filters-core:1.0.2")
+    implementation("ua.wwind.exposed-filters:exposed-filters-jdbc:1.0.2")
+    implementation("ua.wwind.exposed-filters:exposed-filters-rest:1.0.2")
 }
 ```
 
@@ -70,6 +70,38 @@ routing {
     }
 }
 ```
+
+## Field naming in filters
+
+- Always use the Kotlin `Table` property name (usually camelCase) in your JSON filters, not the physical DB column name.
+- This decouples your API from database naming conventions.
+
+Example with a UUID foreign key:
+
+```kotlin
+object Warehouses : Table("warehouses") {
+    val id: Column<UUID> = uuid("id")
+}
+
+object Products : Table("products") {
+    val id: Column<Int> = integer("id").autoIncrement()
+    val warehouseId: Column<UUID> = reference("warehouse_id", Warehouses.id) // property name vs DB column
+}
+```
+
+Filter by property `warehouseId` (maps to DB `warehouse_id`):
+
+```json
+{
+  "filters": {
+    "warehouseId": [ { "op": "EQ", "value": "11111111-1111-1111-1111-111111111111" } ]
+  }
+}
+```
+
+Notes:
+
+- Property names are resolved via reflection. This also works for enums, UUIDs, booleans, numbers, and strings.
 
 ## JSON request format
 

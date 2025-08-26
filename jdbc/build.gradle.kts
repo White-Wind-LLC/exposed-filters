@@ -7,6 +7,7 @@ dependencies {
     implementation(project(":core"))
     implementation(libs.exposed.core)
     implementation(libs.exposed.jdbc)
+    implementation(kotlin("reflect"))
 }
 
 kotlin {
