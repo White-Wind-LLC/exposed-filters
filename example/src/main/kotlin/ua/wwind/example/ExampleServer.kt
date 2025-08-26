@@ -1,11 +1,16 @@
 package ua.wwind.example
 
-import io.ktor.serialization.kotlinx.json.*
-import io.ktor.server.application.*
-import io.ktor.server.plugins.contentnegotiation.*
-import io.ktor.server.response.*
-import io.ktor.server.routing.*
+import io.ktor.serialization.kotlinx.json.json
+import io.ktor.server.application.Application
+import io.ktor.server.application.install
+import io.ktor.server.plugins.contentnegotiation.ContentNegotiation
+import io.ktor.server.response.respond
+import io.ktor.server.routing.get
+import io.ktor.server.routing.post
+import io.ktor.server.routing.routing
 import kotlinx.serialization.Serializable
+import org.jetbrains.exposed.v1.core.DatabaseConfig
+import org.jetbrains.exposed.v1.core.StdOutSqlLogger
 import org.jetbrains.exposed.v1.jdbc.Database
 import org.jetbrains.exposed.v1.jdbc.SchemaUtils
 import org.jetbrains.exposed.v1.jdbc.insert
@@ -13,11 +18,17 @@ import org.jetbrains.exposed.v1.jdbc.selectAll
 import org.jetbrains.exposed.v1.jdbc.transactions.transaction
 import ua.wwind.exposed.filters.jdbc.applyFiltersOn
 import ua.wwind.exposed.filters.rest.receiveFilterRequestOrNull
-import java.util.*
+import java.util.UUID
 
 fun Application.module() {
     // DB init (in-memory H2)
-    Database.connect("jdbc:h2:mem:example;DB_CLOSE_DELAY=-1", driver = "org.h2.Driver")
+    Database.connect(
+        url = "jdbc:h2:mem:example;DB_CLOSE_DELAY=-1",
+        driver = "org.h2.Driver",
+        databaseConfig = DatabaseConfig {
+            sqlLogger = StdOutSqlLogger
+        }
+    )
     transaction {
         SchemaUtils.create(Users, Warehouses, Products)
         // Seed data only if empty
@@ -100,7 +111,7 @@ fun Application.module() {
                     .applyFiltersOn(Products, filter)
                     .map { row ->
                         ProductDto(
-                            id = row[Products.id],
+                            id = row[Products.id].value,
                             title = row[Products.title],
                             // Serialize UUID as string for simplicity
                             warehouseId = row[Products.warehouseId].toString()
@@ -121,4 +132,4 @@ fun Application.module() {
 data class UserDto(val id: Int, val name: String, val age: Int)
 
 @Serializable
-data class ProductDto(val id: Int, val title: String, val warehouseId: String)
+data class ProductDto(val id: Long, val title: String, val warehouseId: String)

@@ -24,6 +24,7 @@ dependencies {
     testImplementation(platform(libs.junit.bom))
     testImplementation(libs.junit.jupiter)
     testImplementation(libs.ktor.server.test.host)
+    testImplementation(libs.slf4j.simple)
     testRuntimeOnly("org.junit.platform:junit-platform-launcher")
 }
 
@@ -37,4 +38,9 @@ tasks.test {
         showCauses = true
         showStackTraces = true
     }
+
+    systemProperty("org.slf4j.simpleLogger.defaultLogLevel", "debug")
+    systemProperty("org.slf4j.simpleLogger.showDateTime", "true")
+    systemProperty("org.slf4j.simpleLogger.dateTimeFormat", "HH:mm:ss.SSS")
+    systemProperty("org.slf4j.simpleLogger.showThreadName", "false")
 }

@@ -1,24 +1,22 @@
 package ua.wwind.example
 
 import org.jetbrains.exposed.v1.core.Column
-import org.jetbrains.exposed.v1.core.Table
-import java.util.*
+import org.jetbrains.exposed.v1.core.dao.id.EntityID
+import org.jetbrains.exposed.v1.core.dao.id.IdTable
+import org.jetbrains.exposed.v1.core.dao.id.LongIdTable
+import java.util.UUID
 
-object Warehouses : Table("warehouses") {
-    val id: Column<UUID> = uuid("id")
+object Warehouses : IdTable<UUID>("warehouses") {
+    override val id: Column<EntityID<UUID>> = uuid("id").entityId()
     val name: Column<String> = varchar("name", 100)
 
     override val primaryKey = PrimaryKey(id)
 }
 
-object Products : Table("products") {
-    val id: Column<Int> = integer("id").autoIncrement()
-
+object Products : LongIdTable("products") {
     // Property name is camelCase, DB column is snake_case
-    val warehouseId: Column<UUID> = reference("warehouse_id", Warehouses.id)
+    val warehouseId: Column<EntityID<UUID>> = reference("warehouse_id", Warehouses.id)
     val title: Column<String> = varchar("title", 120)
-
-    override val primaryKey = PrimaryKey(id)
 }
 
 data class Warehouse(val id: UUID, val name: String)

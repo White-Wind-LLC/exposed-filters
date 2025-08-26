@@ -2,6 +2,14 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.0.3] - 2025-08-26
+
+- Fixed handling of `EQ` and `IN` operators for `EntityID` columns (Exposed ORM):
+    - Values are now correctly parsed according to the underlying identifier type (`Int`, `Long`, `Short`, `String`,
+      `UUID`).
+    - Comparisons are performed through the `EntityID` column itself, preventing ClassCastException and invalid SQL
+      generation.
+
 ## [1.0.2] - 2025-08-26
 
 - Filters now match by Kotlin `Table` property names (e.g., `warehouseId`) instead of DB column names (e.g.,

@@ -1,10 +1,34 @@
 package ua.wwind.exposed.filters.jdbc
 
-import org.jetbrains.exposed.v1.core.*
+import org.jetbrains.exposed.v1.core.BooleanColumnType
+import org.jetbrains.exposed.v1.core.Column
+import org.jetbrains.exposed.v1.core.DoubleColumnType
+import org.jetbrains.exposed.v1.core.EntityIDColumnType
+import org.jetbrains.exposed.v1.core.EnumerationNameColumnType
+import org.jetbrains.exposed.v1.core.IColumnType
+import org.jetbrains.exposed.v1.core.IntegerColumnType
+import org.jetbrains.exposed.v1.core.LongColumnType
+import org.jetbrains.exposed.v1.core.Op
+import org.jetbrains.exposed.v1.core.ShortColumnType
+import org.jetbrains.exposed.v1.core.SqlExpressionBuilder
+import org.jetbrains.exposed.v1.core.Table
+import org.jetbrains.exposed.v1.core.TextColumnType
+import org.jetbrains.exposed.v1.core.UUIDColumnType
+import org.jetbrains.exposed.v1.core.VarCharColumnType
+import org.jetbrains.exposed.v1.core.and
+import org.jetbrains.exposed.v1.core.dao.id.EntityID
+import org.jetbrains.exposed.v1.core.not
+import org.jetbrains.exposed.v1.core.or
 import org.jetbrains.exposed.v1.jdbc.Query
 import org.jetbrains.exposed.v1.jdbc.andWhere
-import ua.wwind.exposed.filters.core.*
-import java.util.*
+import ua.wwind.exposed.filters.core.FieldFilter
+import ua.wwind.exposed.filters.core.FilterCombinator
+import ua.wwind.exposed.filters.core.FilterGroup
+import ua.wwind.exposed.filters.core.FilterLeaf
+import ua.wwind.exposed.filters.core.FilterNode
+import ua.wwind.exposed.filters.core.FilterOperator
+import ua.wwind.exposed.filters.core.FilterRequest
+import java.util.UUID
 import kotlin.reflect.KProperty1
 import kotlin.reflect.full.memberProperties
 import kotlin.reflect.jvm.isAccessible
@@ -75,6 +99,9 @@ private fun predicateFor(column: Column<*>, filter: FieldFilter): Op<Boolean> = 
 
 private fun SqlExpressionBuilder.eqValue(column: Column<*>, raw: String?): Op<Boolean> {
     requireNotNull(raw) { "EQ requires a value" }
+    if (isEntityIdColumn(column)) {
+        return eqEntityIdValue(column as Column<EntityID<*>>, raw)
+    }
     return when (column.columnType) {
         is IntegerColumnType -> (column as Column<Int>).eq(raw.toInt())
         is LongColumnType -> (column as Column<Long>).eq(raw.toLong())
@@ -88,8 +115,20 @@ private fun SqlExpressionBuilder.eqValue(column: Column<*>, raw: String?): Op<Bo
             @Suppress("UNCHECKED_CAST")
             (column as Column<Enum<*>>).eq(enumValue)
         }
-
         else -> error("Unsupported equality for column ${column.name}")
+    }
+}
+
+private fun SqlExpressionBuilder.eqEntityIdValue(column: Column<EntityID<*>>, raw: String): Op<Boolean> {
+    return when (rawColumnTypeOf(column)) {
+        is IntegerColumnType -> (column as Column<EntityID<Int>>).eq(raw.toInt())
+        is LongColumnType -> (column as Column<EntityID<Long>>).eq(raw.toLong())
+        is ShortColumnType -> (column as Column<EntityID<Short>>).eq(raw.toShort())
+        is VarCharColumnType -> (column as Column<EntityID<String>>).eq(raw)
+        is UUIDColumnType -> (column as Column<EntityID<UUID>>).eq(UUID.fromString(raw))
+        else -> {
+            error("Unsupported equality for column ${column.name}")
+        }
     }
 }
 
@@ -101,6 +140,9 @@ private fun SqlExpressionBuilder.likeString(column: Column<*>, pattern: String):
 
 private fun SqlExpressionBuilder.inListValue(column: Column<*>, raws: List<String>): Op<Boolean> {
     require(raws.isNotEmpty()) { "IN requires at least one value" }
+    if (isEntityIdColumn(column)) {
+        return inListEntityIdValue(column, raws)
+    }
     return when (column.columnType) {
         is IntegerColumnType -> (column as Column<Int>).inList(raws.map(String::toInt))
         is LongColumnType -> (column as Column<Long>).inList(raws.map(String::toLong))
@@ -113,8 +155,20 @@ private fun SqlExpressionBuilder.inListValue(column: Column<*>, raws: List<Strin
             @Suppress("UNCHECKED_CAST")
             (column as Column<Enum<*>>).inList(raws.map { enumValueOf(column, it) })
         }
-
         else -> error("Unsupported IN for column ${column.name}")
+    }
+}
+
+private fun SqlExpressionBuilder.inListEntityIdValue(column: Column<*>, raws: List<String>): Op<Boolean> {
+    return when (rawColumnTypeOf(column)) {
+        is IntegerColumnType -> (column as Column<EntityID<Int>>).inList(raws.map(String::toInt))
+        is LongColumnType -> (column as Column<EntityID<Long>>).inList(raws.map(String::toLong))
+        is ShortColumnType -> (column as Column<EntityID<Short>>).inList(raws.map(String::toShort))
+        is VarCharColumnType -> (column as Column<EntityID<String>>).inList(raws)
+        is UUIDColumnType -> (column as Column<EntityID<UUID>>).inList(raws.map(UUID::fromString))
+        else -> {
+            error("Unsupported IN for column ${column.name}")
+        }
     }
 }
 
@@ -189,3 +243,19 @@ private fun enumValueOf(column: Column<*>, name: String): Enum<*> {
     val constants = type.klass.java.enumConstants as Array<out Enum<*>>
     return constants.first { it.name == name }
 }
+
+private fun rawColumnTypeOf(column: Column<*>): IColumnType<*> {
+    val ct = column.columnType
+    val isEntityId = isEntityIdColumn(column)
+    if (!isEntityId) return ct
+    val idColumn = ct.javaClass.methods
+        .firstOrNull { it.name == "getIdColumn" && it.parameterCount == 0 }
+        ?.invoke(ct) as? Column<*>
+    if (idColumn == null) {
+        error("Cannot access idColumn for EntityID column ${column.name}")
+    }
+    return idColumn.columnType
+}
+
+private fun isEntityIdColumn(column: Column<*>): Boolean =
+    column.columnType is EntityIDColumnType<*>
