@@ -4,6 +4,7 @@ import io.ktor.serialization.kotlinx.json.json
 import io.ktor.server.application.Application
 import io.ktor.server.application.install
 import io.ktor.server.plugins.contentnegotiation.ContentNegotiation
+import io.ktor.server.plugins.statuspages.StatusPages
 import io.ktor.server.response.respond
 import io.ktor.server.routing.get
 import io.ktor.server.routing.post
@@ -81,6 +82,15 @@ fun Application.module() {
 
     install(ContentNegotiation) {
         json()
+    }
+
+    install(StatusPages) {
+        exception<IllegalArgumentException> { call, cause ->
+            call.respond(
+                status = io.ktor.http.HttpStatusCode.BadRequest,
+                message = mapOf("error" to (cause.message ?: "Bad request"))
+            )
+        }
     }
 
     routing {

@@ -117,3 +117,6 @@ if (filter != null) {
 - A valid outcome is either `null` (no filters) or a normalized, non-empty filter tree.
 - Operator/value shapes are validated per operator.
 - The logical structure is compacted for efficient processing downstream.
+- Downstream adapters (e.g., `:jdbc`) may throw `IllegalArgumentException` for invalid field references
+  (e.g., unknown field names or using nested paths on non-reference columns). In a Ktor application,
+  map those to HTTP 400 Bad Request, as shown in the example server.

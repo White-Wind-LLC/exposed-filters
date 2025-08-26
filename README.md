@@ -23,9 +23,9 @@ Prerequisites: Kotlin 2.2.0, repository `mavenCentral()`.
 
 ```kotlin
 dependencies {
-    implementation("ua.wwind.exposed-filters:exposed-filters-core:1.0.3")
-    implementation("ua.wwind.exposed-filters:exposed-filters-jdbc:1.0.3")
-    implementation("ua.wwind.exposed-filters:exposed-filters-rest:1.0.3")
+    implementation("ua.wwind.exposed-filters:exposed-filters-core:1.0.4")
+    implementation("ua.wwind.exposed-filters:exposed-filters-jdbc:1.0.4")
+    implementation("ua.wwind.exposed-filters:exposed-filters-rest:1.0.4")
 }
 ```
 
@@ -102,6 +102,32 @@ Filter by property `warehouseId` (maps to DB `warehouse_id`):
 Notes:
 
 - Property names are resolved via reflection. This also works for enums, UUIDs, booleans, numbers, and strings.
+
+## Filtering by related entities (references)
+
+- You can filter by a field of a related entity using dot-paths on reference columns: `referenceField.nestedField`.
+- Under the hood, this is implemented via an `EXISTS` subquery against the referenced table.
+- Currently supports one-level nesting on reference columns.
+
+Example: filter products by warehouse name prefix
+
+```json
+{
+  "filters": {
+    "warehouseId.name": [ { "op": "STARTS_WITH", "value": "Cent" } ]
+  }
+}
+```
+
+Constraints:
+
+- Nested paths are allowed only on reference columns; using `field.subField` on a non-reference column raises an error.
+- Operator constraints still apply based on the target column type (e.g., `CONTAINS`/`STARTS_WITH` only for strings).
+
+## Validation and errors
+
+- Requests that reference unknown fields will fail fast with a clear error message, e.g. `Unknown filter field: foo`.
+- In the sample Ktor app, such cases are mapped to HTTP 400 Bad Request via a global `StatusPages` handler.
 
 ## JSON request format
 

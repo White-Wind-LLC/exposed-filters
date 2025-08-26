@@ -17,10 +17,12 @@ import org.jetbrains.exposed.v1.core.UUIDColumnType
 import org.jetbrains.exposed.v1.core.VarCharColumnType
 import org.jetbrains.exposed.v1.core.and
 import org.jetbrains.exposed.v1.core.dao.id.EntityID
+import org.jetbrains.exposed.v1.core.exists
 import org.jetbrains.exposed.v1.core.not
 import org.jetbrains.exposed.v1.core.or
 import org.jetbrains.exposed.v1.jdbc.Query
 import org.jetbrains.exposed.v1.jdbc.andWhere
+import org.jetbrains.exposed.v1.jdbc.selectAll
 import ua.wwind.exposed.filters.core.FieldFilter
 import ua.wwind.exposed.filters.core.FilterCombinator
 import ua.wwind.exposed.filters.core.FilterGroup
@@ -57,7 +59,9 @@ private fun Table.propertyToColumnMap(): Map<String, Column<*>> =
 
 private fun nodeToPredicate(node: FilterNode, columns: Map<String, Column<*>>): Op<Boolean>? = when (node) {
     is FilterLeaf -> {
-        val parts = node.predicates.mapNotNull { p -> columns[p.field]?.let { c -> predicateFor(c, p) } }
+        val parts = node.predicates.map { predicate ->
+            predicateForField(columns, predicate)
+        }
         if (parts.isEmpty()) {
             null
         } else {
@@ -76,6 +80,65 @@ private fun nodeToPredicate(node: FilterNode, columns: Map<String, Column<*>>): 
             }
         }
     }
+}
+
+private fun predicateForField(rootColumns: Map<String, Column<*>>, filter: FieldFilter): Op<Boolean> {
+    val field = filter.field
+    val dotIndex = field.indexOf('.')
+    if (dotIndex < 0) {
+        val column = requireNotNull(rootColumns[field]) { "Unknown filter field: $field" }
+        return predicateFor(column, filter)
+    }
+
+    val baseName = field.substring(0, dotIndex)
+    val nestedName = field.substring(dotIndex + 1)
+    require(nestedName.isNotEmpty()) { "Invalid nested field path: $field" }
+
+    val baseColumn = checkNotNull(rootColumns[baseName]) { "Unknown filter field: $baseName" }
+    val refInfo = resolveReference(baseColumn)
+        ?: error("Field $baseName is not a reference; cannot use nested property $nestedName")
+
+    val targetColumns = refInfo.referencedTable.propertyToColumnMap()
+    val targetColumn =
+        checkNotNull(targetColumns[nestedName]) { "Unknown nested field: $nestedName for reference $baseName" }
+
+    // Build subquery: select referenced id from target table where target predicate holds
+    val targetPredicate = predicateFor(targetColumn, filter)
+    val subQuery = refInfo.referencedTable
+        .selectAll()
+        .andWhere {
+            with(SqlExpressionBuilder) {
+                @Suppress("UNCHECKED_CAST")
+                ((refInfo.referencedIdColumn as Column<Any?>).eq(baseColumn as Column<Any?>)) and targetPredicate
+            }
+        }
+
+    return exists(subQuery)
+}
+
+private data class ReferenceInfo(
+    val referencedIdColumn: Column<*>,
+    val referencedTable: Table
+)
+
+private fun resolveReference(column: Column<*>): ReferenceInfo? {
+    // Try common Exposed internal names reflectively to locate the referenced column
+    val viaField = runCatching {
+        val f = column.javaClass.getDeclaredField("referee")
+        f.isAccessible = true
+        f.get(column) as? Column<*>
+    }.getOrNull()
+    if (viaField != null) return ReferenceInfo(viaField, viaField.table)
+
+    val viaGetter = runCatching {
+        column.javaClass.methods
+            .firstOrNull { it.name == "getReferee" && it.parameterCount == 0 }
+            ?.invoke(column) as? Column<*>
+    }.getOrNull()
+    if (viaGetter != null) return ReferenceInfo(viaGetter, viaGetter.table)
+
+    // Fallback: if EntityID column type, attempt to find table by naming convention is unreliable; so return null
+    return null
 }
 
 private fun predicateFor(column: Column<*>, filter: FieldFilter): Op<Boolean> = with(SqlExpressionBuilder) {
@@ -99,7 +162,7 @@ private fun predicateFor(column: Column<*>, filter: FieldFilter): Op<Boolean> = 
 
 private fun SqlExpressionBuilder.eqValue(column: Column<*>, raw: String?): Op<Boolean> {
     requireNotNull(raw) { "EQ requires a value" }
-    if (isEntityIdColumn(column)) {
+    if (column.columnType is EntityIDColumnType<*>) {
         return eqEntityIdValue(column as Column<EntityID<*>>, raw)
     }
     return when (column.columnType) {
@@ -115,20 +178,8 @@ private fun SqlExpressionBuilder.eqValue(column: Column<*>, raw: String?): Op<Bo
             @Suppress("UNCHECKED_CAST")
             (column as Column<Enum<*>>).eq(enumValue)
         }
-        else -> error("Unsupported equality for column ${column.name}")
-    }
-}
 
-private fun SqlExpressionBuilder.eqEntityIdValue(column: Column<EntityID<*>>, raw: String): Op<Boolean> {
-    return when (rawColumnTypeOf(column)) {
-        is IntegerColumnType -> (column as Column<EntityID<Int>>).eq(raw.toInt())
-        is LongColumnType -> (column as Column<EntityID<Long>>).eq(raw.toLong())
-        is ShortColumnType -> (column as Column<EntityID<Short>>).eq(raw.toShort())
-        is VarCharColumnType -> (column as Column<EntityID<String>>).eq(raw)
-        is UUIDColumnType -> (column as Column<EntityID<UUID>>).eq(UUID.fromString(raw))
-        else -> {
-            error("Unsupported equality for column ${column.name}")
-        }
+        else -> error("Unsupported equality for column ${column.name}")
     }
 }
 
@@ -140,7 +191,7 @@ private fun SqlExpressionBuilder.likeString(column: Column<*>, pattern: String):
 
 private fun SqlExpressionBuilder.inListValue(column: Column<*>, raws: List<String>): Op<Boolean> {
     require(raws.isNotEmpty()) { "IN requires at least one value" }
-    if (isEntityIdColumn(column)) {
+    if (column.columnType is EntityIDColumnType<*>) {
         return inListEntityIdValue(column, raws)
     }
     return when (column.columnType) {
@@ -155,20 +206,8 @@ private fun SqlExpressionBuilder.inListValue(column: Column<*>, raws: List<Strin
             @Suppress("UNCHECKED_CAST")
             (column as Column<Enum<*>>).inList(raws.map { enumValueOf(column, it) })
         }
-        else -> error("Unsupported IN for column ${column.name}")
-    }
-}
 
-private fun SqlExpressionBuilder.inListEntityIdValue(column: Column<*>, raws: List<String>): Op<Boolean> {
-    return when (rawColumnTypeOf(column)) {
-        is IntegerColumnType -> (column as Column<EntityID<Int>>).inList(raws.map(String::toInt))
-        is LongColumnType -> (column as Column<EntityID<Long>>).inList(raws.map(String::toLong))
-        is ShortColumnType -> (column as Column<EntityID<Short>>).inList(raws.map(String::toShort))
-        is VarCharColumnType -> (column as Column<EntityID<String>>).inList(raws)
-        is UUIDColumnType -> (column as Column<EntityID<UUID>>).inList(raws.map(UUID::fromString))
-        else -> {
-            error("Unsupported IN for column ${column.name}")
-        }
+        else -> error("Unsupported IN for column ${column.name}")
     }
 }
 
@@ -244,9 +283,35 @@ private fun enumValueOf(column: Column<*>, name: String): Enum<*> {
     return constants.first { it.name == name }
 }
 
+private fun SqlExpressionBuilder.eqEntityIdValue(column: Column<EntityID<*>>, raw: String): Op<Boolean> {
+    return when (rawColumnTypeOf(column)) {
+        is IntegerColumnType -> (column as Column<EntityID<Int>>).eq(raw.toInt())
+        is LongColumnType -> (column as Column<EntityID<Long>>).eq(raw.toLong())
+        is ShortColumnType -> (column as Column<EntityID<Short>>).eq(raw.toShort())
+        is VarCharColumnType -> (column as Column<EntityID<String>>).eq(raw)
+        is UUIDColumnType -> (column as Column<EntityID<UUID>>).eq(UUID.fromString(raw))
+        else -> {
+            error("Unsupported equality for column ${column.name}")
+        }
+    }
+}
+
+private fun SqlExpressionBuilder.inListEntityIdValue(column: Column<*>, raws: List<String>): Op<Boolean> {
+    return when (rawColumnTypeOf(column)) {
+        is IntegerColumnType -> (column as Column<EntityID<Int>>).inList(raws.map(String::toInt))
+        is LongColumnType -> (column as Column<EntityID<Long>>).inList(raws.map(String::toLong))
+        is ShortColumnType -> (column as Column<EntityID<Short>>).inList(raws.map(String::toShort))
+        is VarCharColumnType -> (column as Column<EntityID<String>>).inList(raws)
+        is UUIDColumnType -> (column as Column<EntityID<UUID>>).inList(raws.map(UUID::fromString))
+        else -> {
+            error("Unsupported IN for column ${column.name}")
+        }
+    }
+}
+
 private fun rawColumnTypeOf(column: Column<*>): IColumnType<*> {
     val ct = column.columnType
-    val isEntityId = isEntityIdColumn(column)
+    val isEntityId = ct is EntityIDColumnType<*>
     if (!isEntityId) return ct
     val idColumn = ct.javaClass.methods
         .firstOrNull { it.name == "getIdColumn" && it.parameterCount == 0 }
@@ -256,6 +321,3 @@ private fun rawColumnTypeOf(column: Column<*>): IColumnType<*> {
     }
     return idColumn.columnType
 }
-
-private fun isEntityIdColumn(column: Column<*>): Boolean =
-    column.columnType is EntityIDColumnType<*>

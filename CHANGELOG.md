@@ -2,6 +2,17 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.0.4] - 2025-08-26
+
+- Added filtering by related entity fields via dot-path notation on reference columns.
+    - Example: `"warehouseId.name": [{ "op": "STARTS_WITH", "value": "Cent" }]`.
+    - Implemented using an `EXISTS` subquery against the referenced table.
+    - Supports one-level nested paths (field.property) for `reference` columns.
+- Added validation for unknown fields in filters.
+    - Requests referencing non-existing fields now raise `IllegalArgumentException` (surface as HTTP 400 in the REST
+      example) with a clear message, e.g. `Unknown filter field: nonExistingField`.
+    - Attempting to use a nested path on a non-reference field yields a descriptive error.
+
 ## [1.0.3] - 2025-08-26
 
 - Fixed handling of `EQ` and `IN` operators for `EntityID` columns (Exposed ORM):
