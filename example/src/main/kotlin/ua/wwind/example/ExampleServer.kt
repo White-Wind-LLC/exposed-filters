@@ -1,3 +1,4 @@
+@file:OptIn(kotlin.time.ExperimentalTime::class)
 package ua.wwind.example
 
 import io.ktor.serialization.kotlinx.json.json
@@ -9,6 +10,9 @@ import io.ktor.server.response.respond
 import io.ktor.server.routing.get
 import io.ktor.server.routing.post
 import io.ktor.server.routing.routing
+import kotlinx.datetime.DatePeriod
+import kotlinx.datetime.LocalDate
+import kotlinx.datetime.plus
 import kotlinx.serialization.Serializable
 import org.jetbrains.exposed.v1.core.DatabaseConfig
 import org.jetbrains.exposed.v1.core.StdOutSqlLogger
@@ -20,6 +24,7 @@ import org.jetbrains.exposed.v1.jdbc.transactions.transaction
 import ua.wwind.exposed.filters.jdbc.applyFiltersOn
 import ua.wwind.exposed.filters.rest.receiveFilterRequestOrNull
 import java.util.UUID
+import kotlin.time.Instant
 
 fun Application.module() {
     // DB init (in-memory H2)
@@ -31,7 +36,7 @@ fun Application.module() {
         }
     )
     transaction {
-        SchemaUtils.create(Users, Warehouses, Products)
+        SchemaUtils.create(Users, Warehouses, Products, Events)
         // Seed data only if empty
         if (Users.selectAll().empty()) {
             listOf(
@@ -75,6 +80,36 @@ fun Application.module() {
                 Products.insert { st ->
                     st[Products.warehouseId] = p.warehouseId
                     st[Products.title] = p.title
+                }
+            }
+        }
+
+        // Seed Events
+        if (Events.selectAll().empty()) {
+            val baseDay = LocalDate.parse("2024-01-01")
+            val events = listOf(
+                Triple("New Year Party", baseDay, Instant.fromEpochMilliseconds(1704067200000)),
+                Triple(
+                    "Spring Fest",
+                    baseDay.plus(DatePeriod(days = 90)),
+                    Instant.fromEpochMilliseconds(1711843200000)
+                ),
+                Triple(
+                    "Summer Gala",
+                    baseDay.plus(DatePeriod(days = 180)),
+                    Instant.fromEpochMilliseconds(1719792000000)
+                ),
+                Triple(
+                    "Winter Meet",
+                    baseDay.plus(DatePeriod(days = 330)),
+                    Instant.fromEpochMilliseconds(1733011200000)
+                )
+            )
+            events.forEach { (title, day, ts) ->
+                Events.insert { st ->
+                    st[Events.title] = title
+                    st[Events.day] = day
+                    st[Events.occurredAt] = ts
                 }
             }
         }
@@ -131,6 +166,25 @@ fun Application.module() {
             call.respond(items)
         }
 
+        // Events endpoint: supports date (LocalDate) and timestamp (Instant) filters
+        post("/events") {
+            val filter = call.receiveFilterRequestOrNull()
+            val items: List<EventDto> = transaction {
+                Events
+                    .selectAll()
+                    .applyFiltersOn(Events, filter)
+                    .map { row ->
+                        EventDto(
+                            id = row[Events.id],
+                            title = row[Events.title],
+                            day = row[Events.day].toString(),
+                            occurredAt = row[Events.occurredAt].toString()
+                        )
+                    }
+            }
+            call.respond(items)
+        }
+
         // Simple health
         get("/health") {
             call.respond(mapOf("status" to "ok"))
@@ -143,3 +197,6 @@ data class UserDto(val id: Int, val name: String, val age: Int)
 
 @Serializable
 data class ProductDto(val id: Long, val title: String, val warehouseId: String)
+
+@Serializable
+data class EventDto(val id: Int, val title: String, val day: String, val occurredAt: String)

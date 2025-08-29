@@ -1,3 +1,5 @@
+@file:OptIn(kotlin.time.ExperimentalTime::class)
+
 package ua.wwind.exposed.filters.jdbc
 
 import org.jetbrains.exposed.v1.core.BooleanColumnType
@@ -30,10 +32,17 @@ import ua.wwind.exposed.filters.core.FilterLeaf
 import ua.wwind.exposed.filters.core.FilterNode
 import ua.wwind.exposed.filters.core.FilterOperator
 import ua.wwind.exposed.filters.core.FilterRequest
+import java.time.LocalDate
+import java.time.LocalDateTime
+import java.time.ZoneOffset
+import java.time.format.DateTimeParseException
 import java.util.UUID
 import kotlin.reflect.KProperty1
 import kotlin.reflect.full.memberProperties
 import kotlin.reflect.jvm.isAccessible
+import kotlin.time.Instant
+import java.sql.Date as SqlDate
+import java.sql.Timestamp as SqlTimestamp
 
 public fun Query.applyFiltersOn(table: Table, filterRequest: FilterRequest?): Query {
     if (filterRequest == null) return this
@@ -165,6 +174,16 @@ private fun SqlExpressionBuilder.eqValue(column: Column<*>, raw: String?): Op<Bo
     if (column.columnType is EntityIDColumnType<*>) {
         return eqEntityIdValue(column as Column<EntityID<*>>, raw)
     }
+    if (isDateOnlyColumn(column)) {
+        val value = parseDateForColumn(column, raw)
+        @Suppress("UNCHECKED_CAST")
+        return (column as Column<Any>).eq(value)
+    }
+    if (isTimestampColumn(column)) {
+        val value = parseTimestampForColumn(column, raw)
+        @Suppress("UNCHECKED_CAST")
+        return (column as Column<Any>).eq(value)
+    }
     return when (column.columnType) {
         is IntegerColumnType -> (column as Column<Int>).eq(raw.toInt())
         is LongColumnType -> (column as Column<Long>).eq(raw.toLong())
@@ -194,6 +213,16 @@ private fun SqlExpressionBuilder.inListValue(column: Column<*>, raws: List<Strin
     if (column.columnType is EntityIDColumnType<*>) {
         return inListEntityIdValue(column, raws)
     }
+    if (isDateOnlyColumn(column)) {
+        val values: List<Any> = raws.map { parseDateForColumn(column, it) }
+        @Suppress("UNCHECKED_CAST")
+        return (column as Column<Any>).inList(values)
+    }
+    if (isTimestampColumn(column)) {
+        val values: List<Any> = raws.map { parseTimestampForColumn(column, it) }
+        @Suppress("UNCHECKED_CAST")
+        return (column as Column<Any>).inList(values)
+    }
     return when (column.columnType) {
         is IntegerColumnType -> (column as Column<Int>).inList(raws.map(String::toInt))
         is LongColumnType -> (column as Column<Long>).inList(raws.map(String::toLong))
@@ -214,6 +243,18 @@ private fun SqlExpressionBuilder.inListValue(column: Column<*>, raws: List<Strin
 private fun SqlExpressionBuilder.betweenValues(column: Column<*>, raws: List<String>): Op<Boolean> {
     require(raws.size == 2) { "BETWEEN requires exactly two values" }
     val (from, to) = raws
+    if (isDateOnlyColumn(column)) {
+        val left = parseDateForColumn(column, from)
+        val right = parseDateForColumn(column, to)
+        @Suppress("UNCHECKED_CAST")
+        return (column as Column<Comparable<Any>>).between(left as Comparable<Any>, right as Comparable<Any>)
+    }
+    if (isTimestampColumn(column)) {
+        val left = parseTimestampForColumn(column, from)
+        val right = parseTimestampForColumn(column, to)
+        @Suppress("UNCHECKED_CAST")
+        return (column as Column<Comparable<Any>>).between(left as Comparable<Any>, right as Comparable<Any>)
+    }
     return when (column.columnType) {
         is IntegerColumnType -> (column as Column<Int>).between(from.toInt(), to.toInt())
         is LongColumnType -> (column as Column<Long>).between(from.toLong(), to.toLong())
@@ -226,6 +267,16 @@ private fun SqlExpressionBuilder.betweenValues(column: Column<*>, raws: List<Str
 
 private fun SqlExpressionBuilder.compareGreater(column: Column<*>, raw: String?): Op<Boolean> {
     requireNotNull(raw) { "Comparison requires a value" }
+    if (isDateOnlyColumn(column)) {
+        val value = parseDateForColumn(column, raw)
+        @Suppress("UNCHECKED_CAST")
+        return (column as Column<Comparable<Any>>).greater(value as Comparable<Any>)
+    }
+    if (isTimestampColumn(column)) {
+        val value = parseTimestampForColumn(column, raw)
+        @Suppress("UNCHECKED_CAST")
+        return (column as Column<Comparable<Any>>).greater(value as Comparable<Any>)
+    }
     return when (column.columnType) {
         is IntegerColumnType -> (column as Column<Int>).greater(raw.toInt())
         is LongColumnType -> (column as Column<Long>).greater(raw.toLong())
@@ -239,6 +290,16 @@ private fun SqlExpressionBuilder.compareGreater(column: Column<*>, raw: String?)
 
 private fun SqlExpressionBuilder.compareGreaterEq(column: Column<*>, raw: String?): Op<Boolean> {
     requireNotNull(raw) { "Comparison requires a value" }
+    if (isDateOnlyColumn(column)) {
+        val value = parseDateForColumn(column, raw)
+        @Suppress("UNCHECKED_CAST")
+        return (column as Column<Comparable<Any>>).greaterEq(value as Comparable<Any>)
+    }
+    if (isTimestampColumn(column)) {
+        val value = parseTimestampForColumn(column, raw)
+        @Suppress("UNCHECKED_CAST")
+        return (column as Column<Comparable<Any>>).greaterEq(value as Comparable<Any>)
+    }
     return when (column.columnType) {
         is IntegerColumnType -> (column as Column<Int>).greaterEq(raw.toInt())
         is LongColumnType -> (column as Column<Long>).greaterEq(raw.toLong())
@@ -252,6 +313,16 @@ private fun SqlExpressionBuilder.compareGreaterEq(column: Column<*>, raw: String
 
 private fun SqlExpressionBuilder.compareLess(column: Column<*>, raw: String?): Op<Boolean> {
     requireNotNull(raw) { "Comparison requires a value" }
+    if (isDateOnlyColumn(column)) {
+        val value = parseDateForColumn(column, raw)
+        @Suppress("UNCHECKED_CAST")
+        return (column as Column<Comparable<Any>>).less(value as Comparable<Any>)
+    }
+    if (isTimestampColumn(column)) {
+        val value = parseTimestampForColumn(column, raw)
+        @Suppress("UNCHECKED_CAST")
+        return (column as Column<Comparable<Any>>).less(value as Comparable<Any>)
+    }
     return when (column.columnType) {
         is IntegerColumnType -> (column as Column<Int>).less(raw.toInt())
         is LongColumnType -> (column as Column<Long>).less(raw.toLong())
@@ -265,6 +336,16 @@ private fun SqlExpressionBuilder.compareLess(column: Column<*>, raw: String?): O
 
 private fun SqlExpressionBuilder.compareLessEq(column: Column<*>, raw: String?): Op<Boolean> {
     requireNotNull(raw) { "Comparison requires a value" }
+    if (isDateOnlyColumn(column)) {
+        val value = parseDateForColumn(column, raw)
+        @Suppress("UNCHECKED_CAST")
+        return (column as Column<Comparable<Any>>).lessEq(value as Comparable<Any>)
+    }
+    if (isTimestampColumn(column)) {
+        val value = parseTimestampForColumn(column, raw)
+        @Suppress("UNCHECKED_CAST")
+        return (column as Column<Comparable<Any>>).lessEq(value as Comparable<Any>)
+    }
     return when (column.columnType) {
         is IntegerColumnType -> (column as Column<Int>).lessEq(raw.toInt())
         is LongColumnType -> (column as Column<Long>).lessEq(raw.toLong())
@@ -320,4 +401,110 @@ private fun rawColumnTypeOf(column: Column<*>): IColumnType<*> {
         error("Cannot access idColumn for EntityID column ${column.name}")
     }
     return idColumn.columnType
+}
+
+// --- Date support helpers ---
+
+private fun isDateOnlyColumn(column: Column<*>): Boolean {
+    val ct = column.columnType
+    val typeName = ct.javaClass.name
+    val simple = ct.javaClass.simpleName
+    val looksLikeLocalDate =
+        simple.contains("LocalDate", ignoreCase = true) && !simple.contains("Time", ignoreCase = true)
+    val looksLikeSqlDate = simple == "DateColumnType" && !typeName.contains(
+        "DateTime",
+        ignoreCase = true
+    ) && !typeName.contains("Timestamp", ignoreCase = true)
+    return looksLikeLocalDate || looksLikeSqlDate
+}
+
+private fun parseDateForColumn(column: Column<*>, raw: String): Any {
+    // Prefer kotlinx.datetime.LocalDate for kotlin-datetime columns
+    if (usesKotlinxLocalDate(column)) {
+        return parseKotlinxLocalDate(raw)
+    }
+    val javaLocalDate: LocalDate = try {
+        LocalDate.parse(raw)
+    } catch (ex: DateTimeParseException) {
+        throw IllegalArgumentException("Invalid date format for ${column.name}: '$raw'. Expected ISO-8601 date (YYYY-MM-DD)")
+    }
+    // If the column is backed by java.sql.Date, convert accordingly
+    if (usesSqlDate(column)) return SqlDate.valueOf(javaLocalDate)
+    // Otherwise, assume java.time.LocalDate
+    return javaLocalDate
+}
+
+private fun usesSqlDate(column: Column<*>): Boolean {
+    val simple = column.columnType.javaClass.simpleName
+    return simple == "DateColumnType"
+}
+
+private fun usesKotlinxLocalDate(column: Column<*>): Boolean {
+    val type = column.columnType.javaClass
+    val simple = type.simpleName
+    val name = type.name
+    return simple.contains("KotlinLocalDateColumnType", ignoreCase = true) || name.contains(
+        "datetime",
+        ignoreCase = true
+    ) && simple.contains("LocalDate", ignoreCase = true)
+}
+
+private fun isTimestampColumn(column: Column<*>): Boolean {
+    val ct = column.columnType
+    val type = ct.javaClass
+    val simple = type.simpleName
+    val name = type.name
+    val looksLikeLocalDateTime = simple.contains("LocalDateTime", ignoreCase = true)
+    val looksLikeInstant = simple.contains("Instant", ignoreCase = true)
+    val looksLikeTimestamp = simple == "TimestampColumnType" || name.contains("DateTime", ignoreCase = true)
+    return looksLikeLocalDateTime || looksLikeInstant || looksLikeTimestamp
+}
+
+private fun parseTimestampForColumn(column: Column<*>, raw: String): Any {
+    val ldt = parseLocalDateTimeFlexible(raw)
+    return when {
+        usesSqlTimestamp(column) -> SqlTimestamp.valueOf(ldt)
+        usesInstant(column) -> Instant.fromEpochMilliseconds(ldt.toInstant(ZoneOffset.UTC).toEpochMilli())
+        else -> ldt
+    }
+}
+
+private fun parseLocalDateTimeFlexible(raw: String): LocalDateTime {
+    val normalized = if (raw.contains(' ') && !raw.contains('T')) raw.replace(' ', 'T') else raw
+    // Try LocalDateTime first (supports seconds and fractional seconds in ISO), else fall back to LocalDate
+    val ldt = runCatching { LocalDateTime.parse(normalized) }.getOrNull()
+    if (ldt != null) return ldt
+    val ld = try {
+        LocalDate.parse(normalized)
+    } catch (e: DateTimeParseException) {
+        throw IllegalArgumentException("Invalid datetime format: '$raw'. Expected ISO-8601 date-time or date (YYYY-MM-DD[THH:MM[:SS]])")
+    }
+    return ld.atStartOfDay()
+}
+
+private fun usesSqlTimestamp(column: Column<*>): Boolean {
+    val simple = column.columnType.javaClass.simpleName
+    return simple == "TimestampColumnType" || simple.contains("DateTime", ignoreCase = true)
+}
+
+private fun usesInstant(column: Column<*>): Boolean {
+    val simple = column.columnType.javaClass.simpleName
+    return simple.contains("Instant", ignoreCase = true)
+}
+
+private fun parseKotlinxLocalDate(raw: String): Any {
+    // Reflectively call kotlinx.datetime.LocalDate.parse(raw) to avoid compile-time dependency
+    try {
+        val clazz = Class.forName("kotlinx.datetime.LocalDate")
+        val companionField = clazz.getDeclaredField("Companion")
+        val companion = companionField.get(null)
+        val method = companion.javaClass.methods.firstOrNull { it.name == "parse" && it.parameterCount == 1 }
+            ?: throw IllegalArgumentException("kotlinx.datetime.LocalDate.Companion.parse not found")
+        return method.invoke(companion, raw)
+    } catch (ex: Exception) {
+        throw IllegalArgumentException(
+            "Invalid date format: '$raw'. Expected ISO-8601 date (YYYY-MM-DD)",
+            ex
+        )
+    }
 }

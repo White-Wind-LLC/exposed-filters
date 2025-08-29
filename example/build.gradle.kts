@@ -16,6 +16,8 @@ dependencies {
     implementation(libs.exposed.jdbc)
     implementation(libs.exposed.dao)
     implementation(libs.h2)
+    implementation(libs.exposed.kotlin.datetime)
+    implementation(libs.kotlinx.datetime)
 
     implementation(libs.ktor.server.core)
     implementation(libs.ktor.server.status.pages)

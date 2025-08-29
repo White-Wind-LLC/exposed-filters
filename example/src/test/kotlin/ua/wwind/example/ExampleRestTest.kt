@@ -118,4 +118,54 @@ class ExampleRestTest {
         val expectedTitles = listOf("Hammer", "Screwdriver").sorted()
         assertEquals(expectedTitles, actualTitles)
     }
+
+    @Test
+    fun `POST events filtered by LocalDate EQ returns exact day`() = testApplication {
+        application { module() }
+
+        val filterJson = """
+            {
+              "filters": {
+                "day": [ { "op": "EQ", "value": "2024-01-01" } ]
+              }
+            }
+        """.trimIndent()
+
+        val response: HttpResponse = client.post("/events") {
+            contentType(ContentType.Application.Json)
+            setBody(filterJson)
+        }
+
+        val body = response.bodyAsText()
+        println("/events EQ day response: status=${response.status}, body=${body}")
+        assertEquals(HttpStatusCode.OK, response.status)
+        val events: List<EventDto> = json.decodeFromString(body)
+        val titles = events.map { it.title }
+        assertEquals(listOf("New Year Party"), titles)
+    }
+
+    @Test
+    fun `POST events filtered by Instant GTE returns events after threshold`() = testApplication {
+        application { module() }
+
+        val filterJson = """
+            {
+              "filters": {
+                "occurredAt": [ { "op": "GTE", "value": "2024-07-01T00:00:00" } ]
+              }
+            }
+        """.trimIndent()
+
+        val response: HttpResponse = client.post("/events") {
+            contentType(ContentType.Application.Json)
+            setBody(filterJson)
+        }
+
+        assertEquals(HttpStatusCode.OK, response.status)
+        val body = response.bodyAsText()
+        val events: List<EventDto> = json.decodeFromString(body)
+        val titles = events.map { it.title }.sorted()
+        val expected = listOf("Summer Gala", "Winter Meet").sorted()
+        assertEquals(expected, titles)
+    }
 }

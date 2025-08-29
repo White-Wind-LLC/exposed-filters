@@ -23,9 +23,9 @@ Prerequisites: Kotlin 2.2.0, repository `mavenCentral()`.
 
 ```kotlin
 dependencies {
-    implementation("ua.wwind.exposed-filters:exposed-filters-core:1.0.4")
-    implementation("ua.wwind.exposed-filters:exposed-filters-jdbc:1.0.4")
-    implementation("ua.wwind.exposed-filters:exposed-filters-rest:1.0.4")
+    implementation("ua.wwind.exposed-filters:exposed-filters-core:1.0.5")
+    implementation("ua.wwind.exposed-filters:exposed-filters-jdbc:1.0.5")
+    implementation("ua.wwind.exposed-filters:exposed-filters-rest:1.0.5")
 }
 ```
 
@@ -181,12 +181,35 @@ Automatic conversion from JSON strings to column types:
 - UUID
 - Boolean (`toBooleanStrict()`: only "true"/"false")
 - Enums (by enum constant `name`)
+- Date and time
+    - Date-only (LocalDate): supports both Java `java.time.LocalDate` and `kotlinx.datetime.LocalDate` backed columns
+    - Timestamp/DateTime: supports `LocalDateTime`, `Instant` (including `kotlin.time.Instant`), and SQL `TIMESTAMP`
+    - Accepted formats in JSON
+        - Date: `YYYY-MM-DD`
+        - Timestamp: ISO date-time with optional seconds, `YYYY-MM-DDTHH:MM` or `YYYY-MM-DDTHH:MM:SS` (a space instead
+          of `T` is allowed). A date-only value for a timestamp column is treated as start of day (00:00:00)
 
 Operator constraints:
 
 - `LIKE`-style operators only for string columns.
 - `BETWEEN` requires exactly two values; not supported for UUID/Enum/Boolean.
 - `IN`/`NOT_IN` requires non-empty values.
+- Date/time operators: `EQ`, `IN`, `BETWEEN`, `GT`, `GTE`, `LT`, `LTE`, `IS_NULL`, `IS_NOT_NULL` are supported for date
+  and timestamp columns.
+
+## Example: filtering by date and timestamp
+
+The `example` module contains an `Events` table demonstrating both a date-only field and a timestamp field, along with a
+`POST /events` endpoint that accepts filters:
+
+```json
+{
+  "filters": {
+    "day": [ { "op": "EQ", "value": "2024-01-01" } ],
+    "occurredAt": [ { "op": "GTE", "value": "2024-07-01T00:00:00" } ]
+  }
+}
+```
 
 ## Why use this
 

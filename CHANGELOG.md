@@ -2,6 +2,19 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.0.5] - 2025-08-29
+
+- JDBC: Added first-class date and timestamp filtering support
+    - Date-only columns: Java `LocalDate` and `SQL DATE`, plus `kotlinx.datetime.LocalDate` backed columns
+    - Date-time columns: `LocalDateTime`, `Instant` (including `kotlin.time.Instant`), and SQL `TIMESTAMP`
+    - Supported operators: `EQ`, `NEQ`, `IN`, `NOT_IN`, `BETWEEN`, `GT`, `GTE`, `LT`, `LTE`, `IS_NULL`, `IS_NOT_NULL`
+    - Parsing rules
+        - Date: `YYYY-MM-DD`
+        - Timestamp: `YYYY-MM-DDTHH:MM` or `YYYY-MM-DDTHH:MM:SS`; space instead of `T` is allowed; date-only for
+          timestamp implies 00:00:00
+- Example app: added `Events` table and `POST /events` endpoint demonstrating LocalDate and Instant filtering
+- Docs: updated README with date/timestamp filtering docs and example
+
 ## [1.0.4] - 2025-08-26
 
 - Added filtering by related entity fields via dot-path notation on reference columns.
