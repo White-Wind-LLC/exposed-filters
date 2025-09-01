@@ -23,9 +23,9 @@ Prerequisites: Kotlin 2.2.0, repository `mavenCentral()`.
 
 ```kotlin
 dependencies {
-    implementation("ua.wwind.exposed-filters:exposed-filters-core:1.0.5")
-    implementation("ua.wwind.exposed-filters:exposed-filters-jdbc:1.0.5")
-    implementation("ua.wwind.exposed-filters:exposed-filters-rest:1.0.5")
+    implementation("ua.wwind.exposed-filters:exposed-filters-core:1.0.6")
+    implementation("ua.wwind.exposed-filters:exposed-filters-jdbc:1.0.6")
+    implementation("ua.wwind.exposed-filters:exposed-filters-rest:1.0.6")
 }
 ```
 
@@ -193,7 +193,7 @@ Operator constraints:
 
 - `LIKE`-style operators only for string columns.
 - `BETWEEN` requires exactly two values; not supported for UUID/Enum/Boolean.
-- `IN`/`NOT_IN` requires non-empty values.
+- `IN` requires non-empty values; `NOT_IN` with an empty `values` array is treated as a no-op (ignored).
 - Date/time operators: `EQ`, `IN`, `BETWEEN`, `GT`, `GTE`, `LT`, `LTE`, `IS_NULL`, `IS_NOT_NULL` are supported for date
   and timestamp columns.
 

@@ -114,9 +114,12 @@ private fun buildLeafOrNull(filters: Map<String, List<ConditionDto>>?): FilterLe
         conditions.mapNotNull { condition ->
             val values: List<String> = when (condition.op) {
                 FilterOperator.IN,
-                FilterOperator.NOT_IN,
                 FilterOperator.BETWEEN -> {
-                    condition.values ?: return@mapNotNull null
+                    condition.values ?: emptyList()
+                }
+
+                FilterOperator.NOT_IN -> {
+                    return@mapNotNull null
                 }
 
                 FilterOperator.IS_NULL,

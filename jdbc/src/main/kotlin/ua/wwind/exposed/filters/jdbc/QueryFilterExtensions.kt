@@ -151,6 +151,18 @@ private fun resolveReference(column: Column<*>): ReferenceInfo? {
 }
 
 private fun predicateFor(column: Column<*>, filter: FieldFilter): Op<Boolean> = with(SqlExpressionBuilder) {
+    // If an operator that expects an array of values receives an empty array,
+    // the result must be an empty dataset. We encode it as a constant FALSE predicate.
+    if ((filter.operator == FilterOperator.IN ||
+                filter.operator == FilterOperator.BETWEEN) &&
+        filter.values.isEmpty()
+    ) {
+        return@with Op.FALSE
+    }
+    if (filter.operator == FilterOperator.NOT_IN && filter.values.isEmpty()) {
+        return@with Op.TRUE
+    }
+
     when (filter.operator) {
         FilterOperator.EQ -> eqValue(column, filter.values.firstOrNull())
         FilterOperator.NEQ -> not(eqValue(column, filter.values.firstOrNull()))
@@ -209,7 +221,7 @@ private fun SqlExpressionBuilder.likeString(column: Column<*>, pattern: String):
     }
 
 private fun SqlExpressionBuilder.inListValue(column: Column<*>, raws: List<String>): Op<Boolean> {
-    require(raws.isNotEmpty()) { "IN requires at least one value" }
+    if (raws.isEmpty()) return Op.FALSE
     if (column.columnType is EntityIDColumnType<*>) {
         return inListEntityIdValue(column, raws)
     }
@@ -241,6 +253,7 @@ private fun SqlExpressionBuilder.inListValue(column: Column<*>, raws: List<Strin
 }
 
 private fun SqlExpressionBuilder.betweenValues(column: Column<*>, raws: List<String>): Op<Boolean> {
+    if (raws.isEmpty()) return Op.FALSE
     require(raws.size == 2) { "BETWEEN requires exactly two values" }
     val (from, to) = raws
     if (isDateOnlyColumn(column)) {

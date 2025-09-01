@@ -168,4 +168,27 @@ class ExampleRestTest {
         val expected = listOf("Summer Gala", "Winter Meet").sorted()
         assertEquals(expected, titles)
     }
+
+    @Test
+    fun `POST users with IN empty values returns empty result`() = testApplication {
+        application { module() }
+
+        val filterJson = """
+            {
+              "filters": {
+                "name": [ { "op": "IN", "values": [] } ]
+              }
+            }
+        """.trimIndent()
+
+        val response: HttpResponse = client.post("/users") {
+            contentType(ContentType.Application.Json)
+            setBody(filterJson)
+        }
+
+        assertEquals(HttpStatusCode.OK, response.status)
+        val body = response.bodyAsText()
+        val users: List<UserDto> = json.decodeFromString(body)
+        assertEquals(emptyList<UserDto>(), users)
+    }
 }

@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.0.6] - 2025-09-01
+
+- JDBC: treat empty input lists according to operator semantics
+    - `IN []` and `BETWEEN []` now produce an always-false predicate (no rows match)
+    - `NOT_IN []` is ignored (the predicate is dropped), matching expected "no-op" semantics
+    - Updated behavior is covered by an integration test in the `example` module
+
 ## [1.0.5] - 2025-08-29
 
 - JDBC: Added first-class date and timestamp filtering support
