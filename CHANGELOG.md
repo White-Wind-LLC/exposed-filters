@@ -2,6 +2,14 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.0.7] - 2025-09-12
+
+- Build: upgrade Gradle wrapper to `9.0.0`.
+- Dependencies: Kotlin `2.2.20`, Exposed `1.0.0-rc-1`, Ktor `3.3.0`.
+- JDBC: adapt to Exposed v1 API changes by removing `SqlExpressionBuilder` scope and using explicit operators; no
+  behavior change intended.
+- Docs: update README with 1.0.7 coordinates and refreshed compatibility table.
+
 ## [1.0.6] - 2025-09-01
 
 - JDBC: treat empty input lists according to operator semantics

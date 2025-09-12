@@ -12,14 +12,23 @@ import org.jetbrains.exposed.v1.core.IntegerColumnType
 import org.jetbrains.exposed.v1.core.LongColumnType
 import org.jetbrains.exposed.v1.core.Op
 import org.jetbrains.exposed.v1.core.ShortColumnType
-import org.jetbrains.exposed.v1.core.SqlExpressionBuilder
 import org.jetbrains.exposed.v1.core.Table
 import org.jetbrains.exposed.v1.core.TextColumnType
 import org.jetbrains.exposed.v1.core.UUIDColumnType
 import org.jetbrains.exposed.v1.core.VarCharColumnType
 import org.jetbrains.exposed.v1.core.and
+import org.jetbrains.exposed.v1.core.between
 import org.jetbrains.exposed.v1.core.dao.id.EntityID
+import org.jetbrains.exposed.v1.core.eq
 import org.jetbrains.exposed.v1.core.exists
+import org.jetbrains.exposed.v1.core.greater
+import org.jetbrains.exposed.v1.core.greaterEq
+import org.jetbrains.exposed.v1.core.inList
+import org.jetbrains.exposed.v1.core.isNotNull
+import org.jetbrains.exposed.v1.core.isNull
+import org.jetbrains.exposed.v1.core.less
+import org.jetbrains.exposed.v1.core.lessEq
+import org.jetbrains.exposed.v1.core.like
 import org.jetbrains.exposed.v1.core.not
 import org.jetbrains.exposed.v1.core.or
 import org.jetbrains.exposed.v1.jdbc.Query
@@ -116,10 +125,8 @@ private fun predicateForField(rootColumns: Map<String, Column<*>>, filter: Field
     val subQuery = refInfo.referencedTable
         .selectAll()
         .andWhere {
-            with(SqlExpressionBuilder) {
-                @Suppress("UNCHECKED_CAST")
-                ((refInfo.referencedIdColumn as Column<Any?>).eq(baseColumn as Column<Any?>)) and targetPredicate
-            }
+            @Suppress("UNCHECKED_CAST")
+            ((refInfo.referencedIdColumn as Column<Any?>).eq(baseColumn as Column<Any?>)) and targetPredicate
         }
 
     return exists(subQuery)
@@ -150,20 +157,20 @@ private fun resolveReference(column: Column<*>): ReferenceInfo? {
     return null
 }
 
-private fun predicateFor(column: Column<*>, filter: FieldFilter): Op<Boolean> = with(SqlExpressionBuilder) {
+private fun predicateFor(column: Column<*>, filter: FieldFilter): Op<Boolean> {
     // If an operator that expects an array of values receives an empty array,
     // the result must be an empty dataset. We encode it as a constant FALSE predicate.
     if ((filter.operator == FilterOperator.IN ||
                 filter.operator == FilterOperator.BETWEEN) &&
         filter.values.isEmpty()
     ) {
-        return@with Op.FALSE
+        return Op.FALSE
     }
     if (filter.operator == FilterOperator.NOT_IN && filter.values.isEmpty()) {
-        return@with Op.TRUE
+        return Op.TRUE
     }
 
-    when (filter.operator) {
+    return when (filter.operator) {
         FilterOperator.EQ -> eqValue(column, filter.values.firstOrNull())
         FilterOperator.NEQ -> not(eqValue(column, filter.values.firstOrNull()))
         FilterOperator.CONTAINS -> likeString(column, "%${filter.values.firstOrNull() ?: ""}%")
@@ -181,7 +188,7 @@ private fun predicateFor(column: Column<*>, filter: FieldFilter): Op<Boolean> = 
     }
 }
 
-private fun SqlExpressionBuilder.eqValue(column: Column<*>, raw: String?): Op<Boolean> {
+private fun eqValue(column: Column<*>, raw: String?): Op<Boolean> {
     requireNotNull(raw) { "EQ requires a value" }
     if (column.columnType is EntityIDColumnType<*>) {
         return eqEntityIdValue(column as Column<EntityID<*>>, raw)
@@ -214,13 +221,13 @@ private fun SqlExpressionBuilder.eqValue(column: Column<*>, raw: String?): Op<Bo
     }
 }
 
-private fun SqlExpressionBuilder.likeString(column: Column<*>, pattern: String): Op<Boolean> =
+private fun likeString(column: Column<*>, pattern: String): Op<Boolean> =
     when (column.columnType) {
         is VarCharColumnType, is TextColumnType -> (column as Column<String>).like(pattern)
         else -> error("LIKE is only supported for string columns: ${column.name}")
     }
 
-private fun SqlExpressionBuilder.inListValue(column: Column<*>, raws: List<String>): Op<Boolean> {
+private fun inListValue(column: Column<*>, raws: List<String>): Op<Boolean> {
     if (raws.isEmpty()) return Op.FALSE
     if (column.columnType is EntityIDColumnType<*>) {
         return inListEntityIdValue(column, raws)
@@ -252,7 +259,7 @@ private fun SqlExpressionBuilder.inListValue(column: Column<*>, raws: List<Strin
     }
 }
 
-private fun SqlExpressionBuilder.betweenValues(column: Column<*>, raws: List<String>): Op<Boolean> {
+private fun betweenValues(column: Column<*>, raws: List<String>): Op<Boolean> {
     if (raws.isEmpty()) return Op.FALSE
     require(raws.size == 2) { "BETWEEN requires exactly two values" }
     val (from, to) = raws
@@ -278,7 +285,7 @@ private fun SqlExpressionBuilder.betweenValues(column: Column<*>, raws: List<Str
     }
 }
 
-private fun SqlExpressionBuilder.compareGreater(column: Column<*>, raw: String?): Op<Boolean> {
+private fun compareGreater(column: Column<*>, raw: String?): Op<Boolean> {
     requireNotNull(raw) { "Comparison requires a value" }
     if (isDateOnlyColumn(column)) {
         val value = parseDateForColumn(column, raw)
@@ -301,7 +308,7 @@ private fun SqlExpressionBuilder.compareGreater(column: Column<*>, raw: String?)
     }
 }
 
-private fun SqlExpressionBuilder.compareGreaterEq(column: Column<*>, raw: String?): Op<Boolean> {
+private fun compareGreaterEq(column: Column<*>, raw: String?): Op<Boolean> {
     requireNotNull(raw) { "Comparison requires a value" }
     if (isDateOnlyColumn(column)) {
         val value = parseDateForColumn(column, raw)
@@ -324,7 +331,7 @@ private fun SqlExpressionBuilder.compareGreaterEq(column: Column<*>, raw: String
     }
 }
 
-private fun SqlExpressionBuilder.compareLess(column: Column<*>, raw: String?): Op<Boolean> {
+private fun compareLess(column: Column<*>, raw: String?): Op<Boolean> {
     requireNotNull(raw) { "Comparison requires a value" }
     if (isDateOnlyColumn(column)) {
         val value = parseDateForColumn(column, raw)
@@ -347,7 +354,7 @@ private fun SqlExpressionBuilder.compareLess(column: Column<*>, raw: String?): O
     }
 }
 
-private fun SqlExpressionBuilder.compareLessEq(column: Column<*>, raw: String?): Op<Boolean> {
+private fun compareLessEq(column: Column<*>, raw: String?): Op<Boolean> {
     requireNotNull(raw) { "Comparison requires a value" }
     if (isDateOnlyColumn(column)) {
         val value = parseDateForColumn(column, raw)
@@ -377,7 +384,7 @@ private fun enumValueOf(column: Column<*>, name: String): Enum<*> {
     return constants.first { it.name == name }
 }
 
-private fun SqlExpressionBuilder.eqEntityIdValue(column: Column<EntityID<*>>, raw: String): Op<Boolean> {
+private fun eqEntityIdValue(column: Column<EntityID<*>>, raw: String): Op<Boolean> {
     return when (rawColumnTypeOf(column)) {
         is IntegerColumnType -> (column as Column<EntityID<Int>>).eq(raw.toInt())
         is LongColumnType -> (column as Column<EntityID<Long>>).eq(raw.toLong())
@@ -390,7 +397,7 @@ private fun SqlExpressionBuilder.eqEntityIdValue(column: Column<EntityID<*>>, ra
     }
 }
 
-private fun SqlExpressionBuilder.inListEntityIdValue(column: Column<*>, raws: List<String>): Op<Boolean> {
+private fun inListEntityIdValue(column: Column<*>, raws: List<String>): Op<Boolean> {
     return when (rawColumnTypeOf(column)) {
         is IntegerColumnType -> (column as Column<EntityID<Int>>).inList(raws.map(String::toInt))
         is LongColumnType -> (column as Column<EntityID<Long>>).inList(raws.map(String::toLong))

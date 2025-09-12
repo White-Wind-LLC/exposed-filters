@@ -19,21 +19,22 @@ Type-safe, normalized filter model and utilities for building dynamic queries wi
 
 ## Installation
 
-Prerequisites: Kotlin 2.2.0, repository `mavenCentral()`.
+Prerequisites: Kotlin 2.2.20, repository `mavenCentral()`.
 
 ```kotlin
 dependencies {
-    implementation("ua.wwind.exposed-filters:exposed-filters-core:1.0.6")
-    implementation("ua.wwind.exposed-filters:exposed-filters-jdbc:1.0.6")
-    implementation("ua.wwind.exposed-filters:exposed-filters-rest:1.0.6")
+    implementation("ua.wwind.exposed-filters:exposed-filters-core:1.0.7")
+    implementation("ua.wwind.exposed-filters:exposed-filters-jdbc:1.0.7")
+    implementation("ua.wwind.exposed-filters:exposed-filters-rest:1.0.7")
 }
 ```
 
 ## Compatibility
 
-| Library version | Kotlin    | Ktor      | Exposed          |
-|-----------------|-----------|-----------|------------------|
-| 1.0.1           | \>= 2.2.0 | \>= 3.2.3 | \>= 1.0.0-beta-1 |
+| Library version | Kotlin  | Ktor   | Exposed      |
+|-----------------|---------|--------|--------------|
+| 1.0.7           | 2.2.20  | 3.3.0  | 1.0.0-rc-1   |
+| 1.0.1           | 2.2.0   | 3.2.3  | 1.0.0-beta-1 |
 
 ## Quick start
 
