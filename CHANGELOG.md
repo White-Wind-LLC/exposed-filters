@@ -2,6 +2,14 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.0.8] - 2025-09-13
+
+- REST: expose a raw-string parsing entrypoint
+    - Added public `parseFilterRequestOrNull(raw: String)` in `:rest` to build a `FilterRequest` from JSON text
+      when `ApplicationCall` is not available.
+    - Returns null for empty input; invalid JSON continues to throw, preserving error surfacing semantics.
+- REST: refactor `ApplicationCall.receiveFilterRequestOrNull()` to delegate to the new parser; no behavior changes.
+
 ## [1.0.7] - 2025-09-12
 
 - Build: upgrade Gradle wrapper to `9.0.0`.

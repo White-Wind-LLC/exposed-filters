@@ -45,13 +45,26 @@ private val json by lazy {
 
 public suspend fun ApplicationCall.receiveFilterRequestOrNull(): FilterRequest? {
     val raw: String = runCatching { this.receiveNullable<String>() }.getOrNull()?.trim().orEmpty()
-    val body: FilterBodyDto? = if (raw.isEmpty()) {
+    return parseFilterRequestOrNull(raw)
+}
+
+/**
+ * Parse [FilterRequest] from a raw JSON string.
+ *
+ * Decodes a [FilterRequest] from the provided JSON text string.
+ * Returns null if the string is empty. For invalid JSON, an exception will be thrown.
+ */
+public fun parseFilterRequestOrNull(raw: String): FilterRequest? {
+    val text: String = raw.trim()
+    val body: FilterBodyDto? = if (text.isEmpty()) {
         null
     } else {
-        json.decodeFromString<FilterBodyDto>(raw)
+        json.decodeFromString<FilterBodyDto>(text)
     }
-    if (body == null) return null
+    return body?.let { buildFilterRequestOrNull(it) }
+}
 
+private fun buildFilterRequestOrNull(body: FilterBodyDto): FilterRequest? {
     val topLeaf: FilterLeaf? = buildLeafOrNull(body.filters)
     val nestedChildren: List<FilterNode> = body.children?.mapNotNull { it.toNodeOrNull() }.orEmpty()
     val combinator: FilterCombinator = body.combinator ?: FilterCombinator.AND
@@ -76,7 +89,7 @@ public suspend fun ApplicationCall.receiveFilterRequestOrNull(): FilterRequest? 
         }
     }
 
-    return if (root == null) null else FilterRequest(root)
+    return root?.let { FilterRequest(it) }
 }
 
 private fun FilterNodeDto.toNodeOrNull(): FilterNode? {
