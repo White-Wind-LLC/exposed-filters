@@ -95,6 +95,7 @@ private fun nodeToPredicate(node: FilterNode, columns: Map<String, Column<*>>): 
             when (node.combinator) {
                 FilterCombinator.AND -> parts.reduce { acc, op -> acc.and(op) }
                 FilterCombinator.OR -> parts.reduce { acc, op -> acc.or(op) }
+                FilterCombinator.NOT -> not(parts.reduce { acc, op -> acc.and(op) })
             }
         }
     }

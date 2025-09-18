@@ -162,10 +162,22 @@ private fun FilterNode.normalize(): FilterNode? {
 
         is FilterGroup -> {
             val normChildren = children.mapNotNull { child -> child.normalize() }
-            when {
-                normChildren.isEmpty() -> null
-                normChildren.size == 1 -> normChildren.first()
-                else -> copy(children = normChildren)
+            when (combinator) {
+                // Preserve NOT even for a single child, so the negation is not lost
+                FilterCombinator.NOT -> {
+                    when {
+                        normChildren.isEmpty() -> null
+                        else -> copy(children = normChildren)
+                    }
+                }
+
+                else -> {
+                    when {
+                        normChildren.isEmpty() -> null
+                        normChildren.size == 1 -> normChildren.first()
+                        else -> copy(children = normChildren)
+                    }
+                }
             }
         }
     }

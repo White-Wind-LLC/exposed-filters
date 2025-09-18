@@ -41,7 +41,7 @@ Invalid conditions (missing required value(s)) are ignored. Nodes that become em
 ### Normalization rules
 
 - Empty leaves and groups are removed.
-- Groups with a single child collapse to that child.
+- Groups with a single child collapse to that child, except `NOT` which is preserved to retain negation.
 - Flat bodies:
     - `combinator = AND` → a `FilterLeaf` is returned.
     - `combinator = OR` → the leaf is wrapped as `FilterGroup(OR, [leaf])`.
@@ -54,7 +54,7 @@ The final result is a minimal `FilterNode` tree or `null` if no valid conditions
 
 - `FilterOperator`:
   `EQ, NEQ, CONTAINS, STARTS_WITH, ENDS_WITH, IN, NOT_IN, BETWEEN, GT, GTE, LT, LTE, IS_NULL, IS_NOT_NULL`.
-- `FilterCombinator`: `AND | OR`.
+- `FilterCombinator`: `AND | OR | NOT`.
 - `FieldFilter`: `{ field: String, operator: FilterOperator, values: List<String> }`.
 - `FilterLeaf`: `{ predicates: List<FieldFilter> }`.
 - `FilterGroup`: `{ combinator: FilterCombinator, children: List<FilterNode> }`.

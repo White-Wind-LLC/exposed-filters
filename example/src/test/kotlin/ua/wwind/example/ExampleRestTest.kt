@@ -191,4 +191,62 @@ class ExampleRestTest {
         val users: List<UserDto> = json.decodeFromString(body)
         assertEquals(emptyList<UserDto>(), users)
     }
+
+    @Test
+    fun `POST users with NOT GTE age returns users under threshold`() = testApplication {
+        application { module() }
+
+        val filterJson = """
+            {
+              "combinator": "NOT",
+              "filters": {
+                "age": [ { "op": "GTE", "value": "30" } ]
+              }
+            }
+        """.trimIndent()
+
+        val response: HttpResponse = client.post("/users") {
+            contentType(ContentType.Application.Json)
+            setBody(filterJson)
+        }
+
+        assertEquals(HttpStatusCode.OK, response.status)
+        val body = response.bodyAsText()
+        val users: List<UserDto> = json.decodeFromString(body)
+        val actual = users.map { it.name }.sorted()
+        val expected = listOf("Alice", "Bob", "Carol", "Eve", "Grace", "Ivy").sorted()
+        assertEquals(expected, actual)
+    }
+
+    @Test
+    fun `POST users with NOT over OR group excludes age ge 30 or name starts with A`() = testApplication {
+        application { module() }
+
+        val filterJson = """
+            {
+              "combinator": "NOT",
+              "children": [
+                {
+                  "combinator": "OR",
+                  "children": [
+                    { "filters": { "age":  [ { "op": "GTE", "value": "30" } ] } },
+                    { "filters": { "name": [ { "op": "STARTS_WITH", "value": "A" } ] } }
+                  ]
+                }
+              ]
+            }
+        """.trimIndent()
+
+        val response: HttpResponse = client.post("/users") {
+            contentType(ContentType.Application.Json)
+            setBody(filterJson)
+        }
+
+        assertEquals(HttpStatusCode.OK, response.status)
+        val body = response.bodyAsText()
+        val users: List<UserDto> = json.decodeFromString(body)
+        val actual = users.map { it.name }.sorted()
+        val expected = listOf("Bob", "Carol", "Eve", "Grace", "Ivy").sorted()
+        assertEquals(expected, actual)
+    }
 }

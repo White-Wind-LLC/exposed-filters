@@ -6,7 +6,7 @@ Type-safe, normalized filter model and utilities for building dynamic queries wi
 
 - Accept filters as JSON, parse them into a normalized filter tree, and safely apply them to Exposed queries.
 - Strong typing and SQL injection safety via Exposed DSL.
-- Flexible: use flat or nested (tree) filter structures with AND/OR combinators.
+- Flexible: use flat or nested (tree) filter structures with AND/OR/NOT combinators.
 
 - **Modules**:
     - `core` – domain model (`FilterOperator`, `FilterNode`, normalization utils)
@@ -23,9 +23,9 @@ Prerequisites: Kotlin 2.2.20, repository `mavenCentral()`.
 
 ```kotlin
 dependencies {
-    implementation("ua.wwind.exposed-filters:exposed-filters-core:1.0.7")
-    implementation("ua.wwind.exposed-filters:exposed-filters-jdbc:1.0.7")
-    implementation("ua.wwind.exposed-filters:exposed-filters-rest:1.0.7")
+    implementation("ua.wwind.exposed-filters:exposed-filters-core:1.1.0")
+    implementation("ua.wwind.exposed-filters:exposed-filters-jdbc:1.1.0")
+    implementation("ua.wwind.exposed-filters:exposed-filters-rest:1.1.0")
 }
 ```
 
@@ -124,6 +124,8 @@ Constraints:
 
 - Nested paths are allowed only on reference columns; using `field.subField` on a non-reference column raises an error.
 - Operator constraints still apply based on the target column type (e.g., `CONTAINS`/`STARTS_WITH` only for strings).
+- Path nesting for references is limited to one level (e.g., `warehouseId.name`). Multi-hop like `a.b.c` is not
+  supported.
 
 ## Validation and errors
 
@@ -158,12 +160,76 @@ You can send a flat structure or a nested tree. Both parse into a `FilterRequest
 }
 ```
 
+### Multi-level nested groups (AND/OR/NOT)
+
+Arbitrary depth is supported for grouping with `AND`/`OR`/`NOT` combinators. You can nest groups within `children` to
+any
+level to express complex logic.
+
+```json
+{
+  "combinator": "AND",
+  "children": [
+    {
+      "filters": {
+        "status": [{ "op": "IN", "values": ["ACTIVE", "PENDING"] }]
+      }
+    },
+    {
+      "combinator": "OR",
+      "children": [
+        { "filters": { "name": [{ "op": "CONTAINS", "value": "Ann" }] } },
+        {
+          "combinator": "AND",
+          "children": [
+            { "filters": { "age": [{ "op": "GTE", "value": "21" }] } },
+            { "filters": { "age": [{ "op": "LT", "value": "30" }] } }
+          ]
+        }
+      ]
+    }
+  ]
+}
+```
+
+### NOT groups
+
+Negate a group by using `combinator: "NOT"`. All children at that level are combined with AND and wrapped in NOT.
+
+```json
+{
+  "combinator": "NOT",
+  "children": [
+    {
+      "filters": {
+        "status": [
+          {
+            "op": "EQ",
+            "value": "DELETED"
+          }
+        ]
+      }
+    },
+    {
+      "filters": {
+        "archived": [
+          {
+            "op": "EQ",
+            "value": "true"
+          }
+        ]
+      }
+    }
+  ]
+}
+```
+
 Notes:
 
-- `filters` is a map of field -> list of conditions.
-- Each condition has `op` and either `value` or `values` (depending on operator).
-- `combinator` can be `AND` or `OR`. Omitted combinators default to `AND`.
-- Empty/unknown parts are ignored; if nothing remains after normalization, no filter is applied.
+- Nested `children` can be combined with `AND` or `OR` at each level. This supports many levels of nesting.
+- Single-child groups are normalized away; empty groups are ignored.
+- A NOT group with a single child is preserved (not flattened) and negates that child's conjunction.
+- This is independent from nested field paths for references, which remain limited to one level (see next section).
 
 ## Supported operators
 

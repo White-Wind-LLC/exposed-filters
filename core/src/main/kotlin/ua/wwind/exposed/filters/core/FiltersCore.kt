@@ -4,7 +4,7 @@ public enum class FilterOperator {
     EQ, NEQ, CONTAINS, STARTS_WITH, ENDS_WITH, IN, NOT_IN, BETWEEN, GT, GTE, LT, LTE, IS_NULL, IS_NOT_NULL
 }
 
-public enum class FilterCombinator { AND, OR }
+public enum class FilterCombinator { AND, OR, NOT }
 
 public data class FieldFilter(
     val field: String,

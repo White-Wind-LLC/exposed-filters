@@ -2,6 +2,14 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.1.0] - 2025-09-18
+
+- Core: add NOT combinator to `FilterCombinator` to support negation of groups.
+- REST: parsing and normalization now preserve `NOT` groups even with a single child, ensuring negation is not lost.
+- JDBC: implement `NOT` semantics as `NOT(AND(children))` at that level.
+- Docs: update `README.md` and `rest/README.md` with `NOT` usage and examples.
+- Example: add tests covering `NOT` over a single leaf and over an inner `OR` group.
+
 ## [1.0.8] - 2025-09-13
 
 - REST: expose a raw-string parsing entrypoint
