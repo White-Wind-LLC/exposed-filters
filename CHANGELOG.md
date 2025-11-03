@@ -2,6 +2,15 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.2.0] - 2025-11-03
+
+- JDBC: introduce pluggable value mapping for custom column types
+    - New `ColumnMappersModule` and `ColumnValueMapper` let you convert raw filter values into column-typed values when
+      standard mappings are insufficient (e.g., domain-specific value objects, custom enums, money, JSON-backed types).
+    - New overload: `Query.applyFiltersOn(table, filterRequest, mappersModule)`; the existing signature remains
+      unchanged.
+- Dependencies: bump Exposed to `1.0.0-rc-2`, Ktor to `3.3.1`, JUnit to `5.10.2`, and SLF4J to `2.0.13`.
+
 ## [1.1.0] - 2025-09-18
 
 - Core: add NOT combinator to `FilterCombinator` to support negation of groups.

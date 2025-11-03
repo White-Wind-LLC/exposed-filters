@@ -23,18 +23,19 @@ Prerequisites: Kotlin 2.2.20, repository `mavenCentral()`.
 
 ```kotlin
 dependencies {
-    implementation("ua.wwind.exposed-filters:exposed-filters-core:1.1.0")
-    implementation("ua.wwind.exposed-filters:exposed-filters-jdbc:1.1.0")
-    implementation("ua.wwind.exposed-filters:exposed-filters-rest:1.1.0")
+    implementation("ua.wwind.exposed-filters:exposed-filters-core:1.2.0")
+    implementation("ua.wwind.exposed-filters:exposed-filters-jdbc:1.2.0")
+    implementation("ua.wwind.exposed-filters:exposed-filters-rest:1.2.0")
 }
 ```
 
 ## Compatibility
 
-| Library version | Kotlin  | Ktor   | Exposed      |
-|-----------------|---------|--------|--------------|
-| 1.0.7           | 2.2.20  | 3.3.0  | 1.0.0-rc-1   |
-| 1.0.1           | 2.2.0   | 3.2.3  | 1.0.0-beta-1 |
+| Library version | Kotlin  | Ktor  | Exposed      |
+|-----------------|---------|-------|--------------|
+| 1.2.0           | 2.2.20  | 3.3.1 | 1.0.0-rc-2   |
+| 1.0.7           | 2.2.20  | 3.3.0 | 1.0.0-rc-1   |
+| 1.0.1           | 2.2.0   | 3.2.3 | 1.0.0-beta-1 |
 
 ## Quick start
 
@@ -263,6 +264,106 @@ Operator constraints:
 - `IN` requires non-empty values; `NOT_IN` with an empty `values` array is treated as a no-op (ignored).
 - Date/time operators: `EQ`, `IN`, `BETWEEN`, `GT`, `GTE`, `LT`, `LTE`, `IS_NULL`, `IS_NOT_NULL` are supported for date
   and timestamp columns.
+
+## Custom column type mappers
+
+For custom column types not covered by built-in support, you can provide value mappers using `ColumnMappersModule`. This
+allows you to register multiple mappers and apply them to filter operations.
+
+### Using the DSL
+
+Create a mappers module with the `columnMappers` DSL function:
+
+```kotlin
+val customMappers = columnMappers {
+    // Add a mapper using a lambda
+    mapper { columnType, rawValue ->
+        when {
+            columnType is BigDecimalColumnType -> BigDecimal(rawValue)
+            columnType.javaClass.simpleName == "JsonColumnType" -> Json.parse(rawValue)
+            else -> null // return null if this mapper doesn't handle the type
+        }
+    }
+    
+    // Add another mapper for different types
+    mapper { columnType, rawValue ->
+        if (columnType is MyCustomType) {
+            parseMyCustomValue(rawValue)
+        } else null
+    }
+    
+    // Or add a pre-built mapper object
+    addMapper(MyCustomMapper())
+}
+```
+
+### Applying mappers to queries
+
+Pass the mappers module as the third argument to `applyFiltersOn`:
+
+```kotlin
+routing {
+    post("/products") {
+        val filter = call.receiveFilterRequestOrNull()
+        val result = transaction {
+            Products
+                .selectAll()
+                .applyFiltersOn(Products, filter, customMappers)
+                .map { /* ... */ }
+        }
+        call.respond(result)
+    }
+}
+```
+
+### How mappers work
+
+- **Custom mappers are tried first**: Mappers registered in the module are tried in **reverse order** (last registered
+  first), giving priority to the most recently added mappers.
+- **Built-in mappers as fallback**: If no custom mapper handles the type (returns `null`), the library falls back to
+  built-in type handling for standard types (Int, Long, String, UUID, Date, etc.).
+- **Error on unsupported types**: If neither custom nor built-in mappers handle the type, an error is thrown.
+
+This design allows you to override built-in behavior for standard types if needed, while still providing sensible
+defaults.
+
+### Implementing a reusable mapper
+
+You can implement the `ColumnValueMapper` interface for reusable mappers:
+
+```kotlin
+class BigDecimalMapper : ColumnValueMapper {
+    override fun <T : Any> map(columnType: IColumnType<T>, raw: String): T? {
+        return if (columnType is BigDecimalColumnType) {
+            @Suppress("UNCHECKED_CAST")
+            BigDecimal(raw) as T
+        } else null
+    }
+}
+
+// Usage:
+val mappers = columnMappers {
+    addMapper(BigDecimalMapper())
+}
+```
+
+### Example: JSON column support
+
+```kotlin
+val mappers = columnMappers {
+    mapper { columnType, rawValue ->
+        if (columnType.javaClass.simpleName.contains("Json")) {
+            // Parse JSON string into your JSON object type
+            kotlinx.serialization.json.Json.parseToJsonElement(rawValue)
+        } else null
+    }
+}
+
+// Apply to query
+MyTable
+    .selectAll()
+    .applyFiltersOn(MyTable, filterRequest, mappers)
+```
 
 ## Example: filtering by date and timestamp
 

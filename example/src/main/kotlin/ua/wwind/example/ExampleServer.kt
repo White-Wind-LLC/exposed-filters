@@ -21,7 +21,18 @@ import org.jetbrains.exposed.v1.jdbc.SchemaUtils
 import org.jetbrains.exposed.v1.jdbc.insert
 import org.jetbrains.exposed.v1.jdbc.selectAll
 import org.jetbrains.exposed.v1.jdbc.transactions.transaction
+import ua.wwind.example.table.EventTable
+import ua.wwind.example.table.Product
+import ua.wwind.example.table.ProductTable
+import ua.wwind.example.table.User
+import ua.wwind.example.table.UserTable
+import ua.wwind.example.table.WarehouseTable
+import ua.wwind.example.type.ProductId
+import ua.wwind.example.type.ProductIdColumnType
+import ua.wwind.example.type.WarehouseId
+import ua.wwind.example.type.WarehouseIdColumnType
 import ua.wwind.exposed.filters.jdbc.applyFiltersOn
+import ua.wwind.exposed.filters.jdbc.columnMappers
 import ua.wwind.exposed.filters.rest.receiveFilterRequestOrNull
 import java.util.UUID
 import kotlin.time.Instant
@@ -36,9 +47,9 @@ fun Application.module() {
         }
     )
     transaction {
-        SchemaUtils.create(Users, Warehouses, Products, Events)
+        SchemaUtils.create(UserTable, WarehouseTable, ProductTable, EventTable)
         // Seed data only if empty
-        if (Users.selectAll().empty()) {
+        if (UserTable.selectAll().empty()) {
             listOf(
                 User(id = null, name = "Alice", age = 17),
                 User(id = null, name = "Bob", age = 18),
@@ -51,41 +62,41 @@ fun Application.module() {
                 User(id = null, name = "Ivy", age = 28),
                 User(id = null, name = "Jack", age = 50)
             ).forEach { u ->
-                Users.insert { st ->
-                    st[Users.name] = u.name
-                    st[Users.age] = u.age
+                UserTable.insert { st ->
+                    st[UserTable.name] = u.name
+                    st[UserTable.age] = u.age
                 }
             }
         }
 
         // Seed Warehouses and Products
-        if (Warehouses.selectAll().empty()) {
+        if (WarehouseTable.selectAll().empty()) {
             val wh1 = UUID.fromString("389d58bf-1f05-4b62-b7e5-c6feedf9da30")
             val wh2 = UUID.fromString("33d23a36-5dab-4d50-9a4e-6ebd9383680b")
-            Warehouses.insert { st ->
-                st[Warehouses.id] = wh1
-                st[Warehouses.name] = "Central"
+            WarehouseTable.insert { st ->
+                st[WarehouseTable.id] = WarehouseId(wh1)
+                st[WarehouseTable.name] = "Central"
             }
-            Warehouses.insert { st ->
-                st[Warehouses.id] = wh2
-                st[Warehouses.name] = "East"
+            WarehouseTable.insert { st ->
+                st[WarehouseTable.id] = WarehouseId(wh2)
+                st[WarehouseTable.name] = "East"
             }
 
             listOf(
-                Product(id = null, warehouseId = wh1, title = "Screwdriver"),
-                Product(id = null, warehouseId = wh1, title = "Hammer"),
-                Product(id = null, warehouseId = wh2, title = "Wrench"),
-                Product(id = null, warehouseId = wh2, title = "Saw")
+                Product(id = null, warehouseId = WarehouseId(wh1), title = "Screwdriver"),
+                Product(id = null, warehouseId = WarehouseId(wh1), title = "Hammer"),
+                Product(id = null, warehouseId = WarehouseId(wh2), title = "Wrench"),
+                Product(id = null, warehouseId = WarehouseId(wh2), title = "Saw")
             ).forEach { p ->
-                Products.insert { st ->
-                    st[Products.warehouseId] = p.warehouseId
-                    st[Products.title] = p.title
+                ProductTable.insert { st ->
+                    st[ProductTable.warehouseId] = p.warehouseId
+                    st[ProductTable.title] = p.title
                 }
             }
         }
 
         // Seed Events
-        if (Events.selectAll().empty()) {
+        if (EventTable.selectAll().empty()) {
             val baseDay = LocalDate.parse("2024-01-01")
             val events = listOf(
                 Triple("New Year Party", baseDay, Instant.fromEpochMilliseconds(1704067200000)),
@@ -106,10 +117,10 @@ fun Application.module() {
                 )
             )
             events.forEach { (title, day, ts) ->
-                Events.insert { st ->
-                    st[Events.title] = title
-                    st[Events.day] = day
-                    st[Events.occurredAt] = ts
+                EventTable.insert { st ->
+                    st[EventTable.title] = title
+                    st[EventTable.day] = day
+                    st[EventTable.occurredAt] = ts
                 }
             }
         }
@@ -128,19 +139,29 @@ fun Application.module() {
         }
     }
 
+    val idMappers = columnMappers {
+        mapper { columnType, raw ->
+            when (columnType) {
+                is ProductIdColumnType -> ProductId(UUID.fromString(raw))
+                is WarehouseIdColumnType -> WarehouseId(UUID.fromString(raw))
+                else -> null
+            }
+        }
+    }
+
     routing {
         // Demonstration endpoint: selectAll + filters
         post("/users") {
             val filter = call.receiveFilterRequestOrNull()
             val items: List<UserDto> = transaction {
-                Users
+                UserTable
                     .selectAll()
-                    .applyFiltersOn(Users, filter)
+                    .applyFiltersOn(UserTable, filter)
                     .map { row ->
                         UserDto(
-                            id = row[Users.id],
-                            name = row[Users.name],
-                            age = row[Users.age]
+                            id = row[UserTable.id].value,
+                            name = row[UserTable.name],
+                            age = row[UserTable.age]
                         )
                     }
             }
@@ -151,15 +172,15 @@ fun Application.module() {
         post("/products") {
             val filter = call.receiveFilterRequestOrNull()
             val items: List<ProductDto> = transaction {
-                Products
+                ProductTable
                     .selectAll()
-                    .applyFiltersOn(Products, filter)
+                    .applyFiltersOn(ProductTable, filter, idMappers)
                     .map { row ->
                         ProductDto(
-                            id = row[Products.id].value,
-                            title = row[Products.title],
+                            id = row[ProductTable.id].value.toString(),
+                            title = row[ProductTable.title],
                             // Serialize UUID as string for simplicity
-                            warehouseId = row[Products.warehouseId].toString()
+                            warehouseId = row[ProductTable.warehouseId].value.toString()
                         )
                     }
             }
@@ -170,15 +191,15 @@ fun Application.module() {
         post("/events") {
             val filter = call.receiveFilterRequestOrNull()
             val items: List<EventDto> = transaction {
-                Events
+                EventTable
                     .selectAll()
-                    .applyFiltersOn(Events, filter)
+                    .applyFiltersOn(EventTable, filter)
                     .map { row ->
                         EventDto(
-                            id = row[Events.id],
-                            title = row[Events.title],
-                            day = row[Events.day].toString(),
-                            occurredAt = row[Events.occurredAt].toString()
+                            id = row[EventTable.id],
+                            title = row[EventTable.title],
+                            day = row[EventTable.day].toString(),
+                            occurredAt = row[EventTable.occurredAt].toString()
                         )
                     }
             }
@@ -196,7 +217,7 @@ fun Application.module() {
 data class UserDto(val id: Int, val name: String, val age: Int)
 
 @Serializable
-data class ProductDto(val id: Long, val title: String, val warehouseId: String)
+data class ProductDto(val id: String, val title: String, val warehouseId: String)
 
 @Serializable
 data class EventDto(val id: Int, val title: String, val day: String, val occurredAt: String)

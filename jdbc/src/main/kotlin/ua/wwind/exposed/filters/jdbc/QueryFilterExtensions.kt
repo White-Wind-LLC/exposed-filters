@@ -57,7 +57,23 @@ public fun Query.applyFiltersOn(table: Table, filterRequest: FilterRequest?): Qu
     if (filterRequest == null) return this
     val root = filterRequest.root
     val columns = table.propertyToColumnMap()
-    val predicate = nodeToPredicate(root, columns) ?: return this
+    val predicate = context(null as ColumnMappersModule?) { nodeToPredicate(root, columns) } ?: return this
+    return andWhere { predicate }
+}
+
+/**
+ * Same as [applyFiltersOn] but allows passing a [mappersModule] to handle predicates
+ * for custom column types when standard mappings do not apply.
+ */
+public fun Query.applyFiltersOn(
+    table: Table,
+    filterRequest: FilterRequest?,
+    mappersModule: ColumnMappersModule
+): Query {
+    if (filterRequest == null) return this
+    val root = filterRequest.root
+    val columns = table.propertyToColumnMap()
+    val predicate = context(mappersModule) { nodeToPredicate(root, columns) } ?: return this
     return andWhere { predicate }
 }
 
@@ -75,7 +91,11 @@ private fun Table.propertyToColumnMap(): Map<String, Column<*>> =
         }
         .toMap()
 
-private fun nodeToPredicate(node: FilterNode, columns: Map<String, Column<*>>): Op<Boolean>? = when (node) {
+context(mappersModule: ColumnMappersModule?)
+private fun nodeToPredicate(
+    node: FilterNode,
+    columns: Map<String, Column<*>>,
+): Op<Boolean>? = when (node) {
     is FilterLeaf -> {
         val parts = node.predicates.map { predicate ->
             predicateForField(columns, predicate)
@@ -101,7 +121,11 @@ private fun nodeToPredicate(node: FilterNode, columns: Map<String, Column<*>>): 
     }
 }
 
-private fun predicateForField(rootColumns: Map<String, Column<*>>, filter: FieldFilter): Op<Boolean> {
+context(mappersModule: ColumnMappersModule?)
+private fun predicateForField(
+    rootColumns: Map<String, Column<*>>,
+    filter: FieldFilter,
+): Op<Boolean> {
     val field = filter.field
     val dotIndex = field.indexOf('.')
     if (dotIndex < 0) {
@@ -158,7 +182,11 @@ private fun resolveReference(column: Column<*>): ReferenceInfo? {
     return null
 }
 
-private fun predicateFor(column: Column<*>, filter: FieldFilter): Op<Boolean> {
+context(mappersModule: ColumnMappersModule?)
+private fun predicateFor(
+    column: Column<*>,
+    filter: FieldFilter,
+): Op<Boolean> {
     // If an operator that expects an array of values receives an empty array,
     // the result must be an empty dataset. We encode it as a constant FALSE predicate.
     if ((filter.operator == FilterOperator.IN ||
@@ -189,8 +217,23 @@ private fun predicateFor(column: Column<*>, filter: FieldFilter): Op<Boolean> {
     }
 }
 
-private fun eqValue(column: Column<*>, raw: String?): Op<Boolean> {
+context(mappersModule: ColumnMappersModule?)
+private fun eqValue(
+    column: Column<*>,
+    raw: String?,
+): Op<Boolean> {
     requireNotNull(raw) { "EQ requires a value" }
+
+    // First, try custom mappers
+    if (mappersModule != null) {
+        val customMapped = mappersModule.tryMap(column.columnType, raw)
+        if (customMapped != null) {
+            @Suppress("UNCHECKED_CAST")
+            return (column as Column<Any>).eq(customMapped)
+        }
+    }
+
+    // Then, try built-in mappers
     if (column.columnType is EntityIDColumnType<*>) {
         return eqEntityIdValue(column as Column<EntityID<*>>, raw)
     }
@@ -222,14 +265,33 @@ private fun eqValue(column: Column<*>, raw: String?): Op<Boolean> {
     }
 }
 
-private fun likeString(column: Column<*>, pattern: String): Op<Boolean> =
-    when (column.columnType) {
-        is VarCharColumnType, is TextColumnType -> (column as Column<String>).like(pattern)
-        else -> error("LIKE is only supported for string columns: ${column.name}")
+private fun likeString(
+    column: Column<*>,
+    pattern: String
+): Op<Boolean> = when (column.columnType) {
+    is VarCharColumnType, is TextColumnType -> (column as Column<String>).like(pattern)
+    else -> error("LIKE is only supported for string columns: ${column.name}")
+}
+
+context(mappersModule: ColumnMappersModule?)
+private fun inListValue(
+    column: Column<*>,
+    raws: List<String>,
+): Op<Boolean> {
+    if (raws.isEmpty()) return Op.FALSE
+
+    // First, try custom mappers
+    if (mappersModule != null) {
+        val customMapped = raws.mapNotNull { raw ->
+            mappersModule.tryMap(column.columnType, raw)
+        }
+        if (customMapped.size == raws.size) {
+            @Suppress("UNCHECKED_CAST")
+            return (column as Column<Any>).inList(customMapped)
+        }
     }
 
-private fun inListValue(column: Column<*>, raws: List<String>): Op<Boolean> {
-    if (raws.isEmpty()) return Op.FALSE
+    // Then, try built-in mappers
     if (column.columnType is EntityIDColumnType<*>) {
         return inListEntityIdValue(column, raws)
     }
@@ -260,10 +322,28 @@ private fun inListValue(column: Column<*>, raws: List<String>): Op<Boolean> {
     }
 }
 
-private fun betweenValues(column: Column<*>, raws: List<String>): Op<Boolean> {
+context(mappersModule: ColumnMappersModule?)
+private fun betweenValues(
+    column: Column<*>,
+    raws: List<String>,
+): Op<Boolean> {
     if (raws.isEmpty()) return Op.FALSE
     require(raws.size == 2) { "BETWEEN requires exactly two values" }
     val (from, to) = raws
+
+    // First, try custom mappers
+    if (mappersModule != null) {
+        val left = mappersModule.tryMap(column.columnType, from)
+        val right = mappersModule.tryMap(column.columnType, to)
+        if (left != null && right != null) {
+            require(left is Comparable<*>) { "BETWEEN requires comparable values for column ${column.name}" }
+            require(right is Comparable<*>) { "BETWEEN requires comparable values for column ${column.name}" }
+            @Suppress("UNCHECKED_CAST")
+            return (column as Column<Comparable<Any>>).between(left as Comparable<Any>, right as Comparable<Any>)
+        }
+    }
+
+    // Then, try built-in mappers
     if (isDateOnlyColumn(column)) {
         val left = parseDateForColumn(column, from)
         val right = parseDateForColumn(column, to)
@@ -286,8 +366,24 @@ private fun betweenValues(column: Column<*>, raws: List<String>): Op<Boolean> {
     }
 }
 
-private fun compareGreater(column: Column<*>, raw: String?): Op<Boolean> {
+context(mappersModule: ColumnMappersModule?)
+private fun compareGreater(
+    column: Column<*>,
+    raw: String?,
+): Op<Boolean> {
     requireNotNull(raw) { "Comparison requires a value" }
+
+    // First, try custom mappers
+    if (mappersModule != null) {
+        val mapped = mappersModule.tryMap(column.columnType, raw)
+        if (mapped != null) {
+            require(mapped is Comparable<*>) { "Comparison requires comparable value for column ${column.name}" }
+            @Suppress("UNCHECKED_CAST")
+            return (column as Column<Comparable<Any>>).greater(mapped as Comparable<Any>)
+        }
+    }
+
+    // Then, try built-in mappers
     if (isDateOnlyColumn(column)) {
         val value = parseDateForColumn(column, raw)
         @Suppress("UNCHECKED_CAST")
@@ -309,8 +405,24 @@ private fun compareGreater(column: Column<*>, raw: String?): Op<Boolean> {
     }
 }
 
-private fun compareGreaterEq(column: Column<*>, raw: String?): Op<Boolean> {
+context(mappersModule: ColumnMappersModule?)
+private fun compareGreaterEq(
+    column: Column<*>,
+    raw: String?,
+): Op<Boolean> {
     requireNotNull(raw) { "Comparison requires a value" }
+
+    // First, try custom mappers
+    if (mappersModule != null) {
+        val mapped = mappersModule.tryMap(column.columnType, raw)
+        if (mapped != null) {
+            require(mapped is Comparable<*>) { "Comparison requires comparable value for column ${column.name}" }
+            @Suppress("UNCHECKED_CAST")
+            return (column as Column<Comparable<Any>>).greaterEq(mapped as Comparable<Any>)
+        }
+    }
+
+    // Then, try built-in mappers
     if (isDateOnlyColumn(column)) {
         val value = parseDateForColumn(column, raw)
         @Suppress("UNCHECKED_CAST")
@@ -332,8 +444,24 @@ private fun compareGreaterEq(column: Column<*>, raw: String?): Op<Boolean> {
     }
 }
 
-private fun compareLess(column: Column<*>, raw: String?): Op<Boolean> {
+context(mappersModule: ColumnMappersModule?)
+private fun compareLess(
+    column: Column<*>,
+    raw: String?,
+): Op<Boolean> {
     requireNotNull(raw) { "Comparison requires a value" }
+
+    // First, try custom mappers
+    if (mappersModule != null) {
+        val mapped = mappersModule.tryMap(column.columnType, raw)
+        if (mapped != null) {
+            require(mapped is Comparable<*>) { "Comparison requires comparable value for column ${column.name}" }
+            @Suppress("UNCHECKED_CAST")
+            return (column as Column<Comparable<Any>>).less(mapped as Comparable<Any>)
+        }
+    }
+
+    // Then, try built-in mappers
     if (isDateOnlyColumn(column)) {
         val value = parseDateForColumn(column, raw)
         @Suppress("UNCHECKED_CAST")
@@ -355,8 +483,24 @@ private fun compareLess(column: Column<*>, raw: String?): Op<Boolean> {
     }
 }
 
-private fun compareLessEq(column: Column<*>, raw: String?): Op<Boolean> {
+context(mappersModule: ColumnMappersModule?)
+private fun compareLessEq(
+    column: Column<*>,
+    raw: String?,
+): Op<Boolean> {
     requireNotNull(raw) { "Comparison requires a value" }
+
+    // First, try custom mappers
+    if (mappersModule != null) {
+        val mapped = mappersModule.tryMap(column.columnType, raw)
+        if (mapped != null) {
+            require(mapped is Comparable<*>) { "Comparison requires comparable value for column ${column.name}" }
+            @Suppress("UNCHECKED_CAST")
+            return (column as Column<Comparable<Any>>).lessEq(mapped as Comparable<Any>)
+        }
+    }
+
+    // Then, try built-in mappers
     if (isDateOnlyColumn(column)) {
         val value = parseDateForColumn(column, raw)
         @Suppress("UNCHECKED_CAST")
@@ -385,20 +529,46 @@ private fun enumValueOf(column: Column<*>, name: String): Enum<*> {
     return constants.first { it.name == name }
 }
 
-private fun eqEntityIdValue(column: Column<EntityID<*>>, raw: String): Op<Boolean> {
-    return when (rawColumnTypeOf(column)) {
+context(mappersModule: ColumnMappersModule?)
+private fun eqEntityIdValue(
+    column: Column<EntityID<*>>,
+    raw: String,
+): Op<Boolean> {
+    val rawColumnType = rawColumnTypeOf(column)
+    if (mappersModule != null) {
+        @Suppress("UNCHECKED_CAST")
+        val customMapped = mappersModule.tryMap(rawColumnType as IColumnType<Any>, raw)
+        if (customMapped != null) {
+            @Suppress("UNCHECKED_CAST")
+            return (column as Column<EntityID<Any>>).eq(customMapped)
+        }
+    }
+    return when (rawColumnType) {
         is IntegerColumnType -> (column as Column<EntityID<Int>>).eq(raw.toInt())
         is LongColumnType -> (column as Column<EntityID<Long>>).eq(raw.toLong())
         is ShortColumnType -> (column as Column<EntityID<Short>>).eq(raw.toShort())
         is VarCharColumnType -> (column as Column<EntityID<String>>).eq(raw)
         is UUIDColumnType -> (column as Column<EntityID<UUID>>).eq(UUID.fromString(raw))
-        else -> {
-            error("Unsupported equality for column ${column.name}")
-        }
+        else -> error("Unsupported equality for column ${column.name}")
     }
 }
 
-private fun inListEntityIdValue(column: Column<*>, raws: List<String>): Op<Boolean> {
+context(mappersModule: ColumnMappersModule?)
+private fun inListEntityIdValue(
+    column: Column<*>,
+    raws: List<String>,
+): Op<Boolean> {
+    val rawColumnType = rawColumnTypeOf(column)
+    if (mappersModule != null) {
+        @Suppress("UNCHECKED_CAST")
+        val customMapped = raws.mapNotNull { raw ->
+            mappersModule.tryMap(rawColumnType as IColumnType<Any>, raw)
+        }
+        if (customMapped.size == raws.size) {
+            @Suppress("UNCHECKED_CAST")
+            return (column as Column<EntityID<Any>>).inList(customMapped)
+        }
+    }
     return when (rawColumnTypeOf(column)) {
         is IntegerColumnType -> (column as Column<EntityID<Int>>).inList(raws.map(String::toInt))
         is LongColumnType -> (column as Column<EntityID<Long>>).inList(raws.map(String::toLong))

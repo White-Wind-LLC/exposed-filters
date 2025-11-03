@@ -13,6 +13,10 @@ dependencies {
 kotlin {
     explicitApi()
     jvmToolchain(17)
+    compilerOptions {
+        // Enable experimental context parameters feature used in this module
+        freeCompilerArgs.add("-Xcontext-parameters")
+    }
 }
 
 mavenPublishing {
