@@ -8,6 +8,7 @@ import org.jetbrains.exposed.v1.core.ColumnSet
 import org.jetbrains.exposed.v1.core.DoubleColumnType
 import org.jetbrains.exposed.v1.core.EntityIDColumnType
 import org.jetbrains.exposed.v1.core.EnumerationNameColumnType
+import org.jetbrains.exposed.v1.core.ExpressionWithColumnType
 import org.jetbrains.exposed.v1.core.IColumnType
 import org.jetbrains.exposed.v1.core.IntegerColumnType
 import org.jetbrains.exposed.v1.core.LongColumnType
@@ -99,26 +100,33 @@ public fun Query.applyFiltersOn(
 }
 
 /**
- * Applies filters using a custom column mapping.
+ * Applies filters using a custom expression mapping.
  * This is the most flexible variant — you control exactly how filter field names
- * map to columns.
+ * map to columns or expressions.
+ *
+ * Supports both [Column] and [ExpressionWithColumnType] (e.g., `coalesce()`, `concat()`, aliased columns).
+ *
+ * **Note:** Nested field filters (e.g., `user.name`) are only supported when the expression
+ * is a [Column] with a foreign key reference.
  *
  * Example:
  * ```
- * val columns = mapOf(
+ * val expressions = mapOf(
  *     "userName" to UserTable.name,
- *     "productTitle" to ProductTable.title
+ *     "productTitle" to ProductTable.title,
+ *     "fullName" to concat(UserTable.firstName, stringLiteral(" "), UserTable.lastName),
+ *     "status" to coalesce(UserTable.status, stringLiteral("unknown"))
  * )
- * query.applyFilters(columns, filter)
+ * query.applyFilters(expressions, filter)
  * ```
  */
 public fun Query.applyFilters(
-    columns: Map<String, Column<*>>,
+    expressions: Map<String, ExpressionWithColumnType<*>>,
     filterRequest: FilterRequest?
 ): Query {
     if (filterRequest == null) return this
     val root = filterRequest.root
-    val predicate = context(null as ColumnMappersModule?) { nodeToPredicate(root, columns) } ?: return this
+    val predicate = context(null as ColumnMappersModule?) { nodeToPredicate(root, expressions) } ?: return this
     return andWhere { predicate }
 }
 
@@ -126,27 +134,27 @@ public fun Query.applyFilters(
  * Same as [applyFilters] but allows passing a [mappersModule].
  */
 public fun Query.applyFilters(
-    columns: Map<String, Column<*>>,
+    expressions: Map<String, ExpressionWithColumnType<*>>,
     filterRequest: FilterRequest?,
     mappersModule: ColumnMappersModule
 ): Query {
     if (filterRequest == null) return this
     val root = filterRequest.root
-    val predicate = context(mappersModule) { nodeToPredicate(root, columns) } ?: return this
+    val predicate = context(mappersModule) { nodeToPredicate(root, expressions) } ?: return this
     return andWhere { predicate }
 }
 
 /**
- * Converts a [ColumnSet] to a map of field names to columns.
+ * Converts a [ColumnSet] to a map of field names to expressions.
  * - For [Table]: uses Kotlin property names (camelCase)
  * - For other types (Join, Alias, etc.): uses SQL column names
  */
-private fun ColumnSet.toColumnMap(): Map<String, Column<*>> = when (this) {
+private fun ColumnSet.toColumnMap(): Map<String, ExpressionWithColumnType<*>> = when (this) {
     is Table -> this.propertyToColumnMap()
     else -> this.columns.associateBy { it.name }
 }
 
-public fun Table.propertyToColumnMap(): Map<String, Column<*>> =
+public fun Table.propertyToColumnMap(): Map<String, ExpressionWithColumnType<*>> =
     this::class.memberProperties
         .mapNotNull { prop ->
             @Suppress("UNCHECKED_CAST")
@@ -163,11 +171,11 @@ public fun Table.propertyToColumnMap(): Map<String, Column<*>> =
 context(mappersModule: ColumnMappersModule?)
 private fun nodeToPredicate(
     node: FilterNode,
-    columns: Map<String, Column<*>>,
+    expressions: Map<String, ExpressionWithColumnType<*>>,
 ): Op<Boolean>? = when (node) {
     is FilterLeaf -> {
         val parts = node.predicates.map { predicate ->
-            predicateForField(columns, predicate)
+            predicateForField(expressions, predicate)
         }
         if (parts.isEmpty()) {
             null
@@ -177,7 +185,7 @@ private fun nodeToPredicate(
     }
 
     is FilterGroup -> {
-        val parts = node.children.mapNotNull { child -> nodeToPredicate(child, columns) }
+        val parts = node.children.mapNotNull { child -> nodeToPredicate(child, expressions) }
         if (parts.isEmpty()) {
             null
         } else {
@@ -192,22 +200,28 @@ private fun nodeToPredicate(
 
 context(mappersModule: ColumnMappersModule?)
 private fun predicateForField(
-    rootColumns: Map<String, Column<*>>,
+    expressions: Map<String, ExpressionWithColumnType<*>>,
     filter: FieldFilter,
 ): Op<Boolean> {
     val field = filter.field
     val dotIndex = field.indexOf('.')
     if (dotIndex < 0) {
-        val column = requireNotNull(rootColumns[field]) { "Unknown filter field: $field" }
-        return predicateFor(column, filter)
+        val expr = requireNotNull(expressions[field]) { "Unknown filter field: $field" }
+        return predicateFor(expr, filter, field)
     }
 
+    // Nested field support (only for Column types)
     val baseName = field.substring(0, dotIndex)
     val nestedName = field.substring(dotIndex + 1)
     require(nestedName.isNotEmpty()) { "Invalid nested field path: $field" }
 
-    val baseColumn = checkNotNull(rootColumns[baseName]) { "Unknown filter field: $baseName" }
-    val refInfo = resolveReference(baseColumn)
+    val baseExpr = checkNotNull(expressions[baseName]) { "Unknown filter field: $baseName" }
+    require(baseExpr is Column<*>) {
+        "Nested field filters (e.g., '$field') are only supported for Column types, " +
+                "not for computed expressions."
+    }
+
+    val refInfo = resolveReference(baseExpr)
         ?: error("Field $baseName is not a reference; cannot use nested property $nestedName")
 
     val targetColumns = refInfo.referencedTable.propertyToColumnMap()
@@ -215,12 +229,12 @@ private fun predicateForField(
         checkNotNull(targetColumns[nestedName]) { "Unknown nested field: $nestedName for reference $baseName" }
 
     // Build subquery: select referenced id from target table where target predicate holds
-    val targetPredicate = predicateFor(targetColumn, filter)
+    val targetPredicate = predicateFor(targetColumn, filter, field)
     val subQuery = refInfo.referencedTable
         .selectAll()
         .andWhere {
             @Suppress("UNCHECKED_CAST")
-            ((refInfo.referencedIdColumn as Column<Any?>).eq(baseColumn as Column<Any?>)) and targetPredicate
+            ((refInfo.referencedIdColumn as Column<Any?>).eq(baseExpr as Column<Any?>)) and targetPredicate
         }
 
     return exists(subQuery)
@@ -253,8 +267,9 @@ private fun resolveReference(column: Column<*>): ReferenceInfo? {
 
 context(mappersModule: ColumnMappersModule?)
 private fun predicateFor(
-    column: Column<*>,
+    expr: ExpressionWithColumnType<*>,
     filter: FieldFilter,
+    fieldName: String,
 ): Op<Boolean> {
     // If an operator that expects an array of values receives an empty array,
     // the result must be an empty dataset. We encode it as a constant FALSE predicate.
@@ -269,132 +284,141 @@ private fun predicateFor(
     }
 
     return when (filter.operator) {
-        FilterOperator.EQ -> eqValue(column, filter.values.firstOrNull())
-        FilterOperator.NEQ -> not(eqValue(column, filter.values.firstOrNull()))
-        FilterOperator.CONTAINS -> likeString(column, "%${filter.values.firstOrNull() ?: ""}%")
-        FilterOperator.STARTS_WITH -> likeString(column, "${filter.values.firstOrNull() ?: ""}%")
-        FilterOperator.ENDS_WITH -> likeString(column, "%${filter.values.firstOrNull() ?: ""}")
-        FilterOperator.IN -> inListValue(column, filter.values)
-        FilterOperator.NOT_IN -> not(inListValue(column, filter.values))
-        FilterOperator.BETWEEN -> betweenValues(column, filter.values)
-        FilterOperator.GT -> compareGreater(column, filter.values.firstOrNull())
-        FilterOperator.GTE -> compareGreaterEq(column, filter.values.firstOrNull())
-        FilterOperator.LT -> compareLess(column, filter.values.firstOrNull())
-        FilterOperator.LTE -> compareLessEq(column, filter.values.firstOrNull())
-        FilterOperator.IS_NULL -> column.isNull()
-        FilterOperator.IS_NOT_NULL -> column.isNotNull()
+        FilterOperator.EQ -> eqValue(expr, filter.values.firstOrNull(), fieldName)
+        FilterOperator.NEQ -> not(eqValue(expr, filter.values.firstOrNull(), fieldName))
+        FilterOperator.CONTAINS -> likeString(expr, "%${filter.values.firstOrNull() ?: ""}%", fieldName)
+        FilterOperator.STARTS_WITH -> likeString(expr, "${filter.values.firstOrNull() ?: ""}%", fieldName)
+        FilterOperator.ENDS_WITH -> likeString(expr, "%${filter.values.firstOrNull() ?: ""}", fieldName)
+        FilterOperator.IN -> inListValue(expr, filter.values, fieldName)
+        FilterOperator.NOT_IN -> not(inListValue(expr, filter.values, fieldName))
+        FilterOperator.BETWEEN -> betweenValues(expr, filter.values, fieldName)
+        FilterOperator.GT -> compareGreater(expr, filter.values.firstOrNull(), fieldName)
+        FilterOperator.GTE -> compareGreaterEq(expr, filter.values.firstOrNull(), fieldName)
+        FilterOperator.LT -> compareLess(expr, filter.values.firstOrNull(), fieldName)
+        FilterOperator.LTE -> compareLessEq(expr, filter.values.firstOrNull(), fieldName)
+        FilterOperator.IS_NULL -> expr.isNull()
+        FilterOperator.IS_NOT_NULL -> expr.isNotNull()
     }
 }
 
 context(mappersModule: ColumnMappersModule?)
 private fun eqValue(
-    column: Column<*>,
+    expr: ExpressionWithColumnType<*>,
     raw: String?,
+    fieldName: String,
 ): Op<Boolean> {
     requireNotNull(raw) { "EQ requires a value" }
 
     // First, try custom mappers
     if (mappersModule != null) {
-        val customMapped = mappersModule.tryMap(column.columnType, raw)
+        val customMapped = mappersModule.tryMap(expr.columnType, raw)
         if (customMapped != null) {
             @Suppress("UNCHECKED_CAST")
-            return (column as Column<Any>).eq(customMapped)
+            return (expr as ExpressionWithColumnType<Any>).eq(customMapped)
         }
+    }
+
+    // Handle EntityID columns (only applicable for Column type)
+    if (expr is Column<*> && expr.columnType is EntityIDColumnType<*>) {
+        @Suppress("UNCHECKED_CAST")
+        return eqEntityIdValue(expr as Column<EntityID<*>>, raw, fieldName)
     }
 
     // Then, try built-in mappers
-    if (column.columnType is EntityIDColumnType<*>) {
-        return eqEntityIdValue(column as Column<EntityID<*>>, raw)
-    }
-    if (isDateOnlyColumn(column)) {
-        val value = parseDateForColumn(column, raw)
+    if (isDateOnlyExpr(expr)) {
+        val value = parseDateForExpr(expr, raw, fieldName)
         @Suppress("UNCHECKED_CAST")
-        return (column as Column<Any>).eq(value)
+        return (expr as ExpressionWithColumnType<Any>).eq(value)
     }
-    if (isTimestampColumn(column)) {
-        val value = parseTimestampForColumn(column, raw)
+    if (isTimestampExpr(expr)) {
+        val value = parseTimestampForExpr(expr, raw)
         @Suppress("UNCHECKED_CAST")
-        return (column as Column<Any>).eq(value)
+        return (expr as ExpressionWithColumnType<Any>).eq(value)
     }
-    return when (column.columnType) {
-        is IntegerColumnType -> (column as Column<Int>).eq(raw.toInt())
-        is LongColumnType -> (column as Column<Long>).eq(raw.toLong())
-        is ShortColumnType -> (column as Column<Short>).eq(raw.toShort())
-        is DoubleColumnType -> (column as Column<Double>).eq(raw.toDouble())
-        is VarCharColumnType, is TextColumnType -> (column as Column<String>).eq(raw)
-        is UUIDColumnType -> (column as Column<UUID>).eq(UUID.fromString(raw))
-        is BooleanColumnType -> (column as Column<Boolean>).eq(raw.toBooleanStrict())
+    return when (expr.columnType) {
+        is IntegerColumnType -> (expr as ExpressionWithColumnType<Int>).eq(raw.toInt())
+        is LongColumnType -> (expr as ExpressionWithColumnType<Long>).eq(raw.toLong())
+        is ShortColumnType -> (expr as ExpressionWithColumnType<Short>).eq(raw.toShort())
+        is DoubleColumnType -> (expr as ExpressionWithColumnType<Double>).eq(raw.toDouble())
+        is VarCharColumnType, is TextColumnType -> (expr as ExpressionWithColumnType<String>).eq(raw)
+        is UUIDColumnType -> (expr as ExpressionWithColumnType<UUID>).eq(UUID.fromString(raw))
+        is BooleanColumnType -> (expr as ExpressionWithColumnType<Boolean>).eq(raw.toBooleanStrict())
         is EnumerationNameColumnType<*> -> {
-            val enumValue = enumValueOf(column, raw)
+            val enumValue = enumValueOf(expr, raw)
             @Suppress("UNCHECKED_CAST")
-            (column as Column<Enum<*>>).eq(enumValue)
+            (expr as ExpressionWithColumnType<Enum<*>>).eq(enumValue)
         }
 
-        else -> error("Unsupported equality for column ${column.name}")
+        else -> error("Unsupported equality for field '$fieldName'")
     }
 }
 
 private fun likeString(
-    column: Column<*>,
-    pattern: String
-): Op<Boolean> = when (column.columnType) {
-    is VarCharColumnType, is TextColumnType -> (column as Column<String>).like(pattern)
-    else -> error("LIKE is only supported for string columns: ${column.name}")
+    expr: ExpressionWithColumnType<*>,
+    pattern: String,
+    fieldName: String,
+): Op<Boolean> = when (expr.columnType) {
+    is VarCharColumnType, is TextColumnType -> (expr as ExpressionWithColumnType<String>).like(pattern)
+    else -> error("LIKE is only supported for string fields: '$fieldName'")
 }
 
 context(mappersModule: ColumnMappersModule?)
 private fun inListValue(
-    column: Column<*>,
+    expr: ExpressionWithColumnType<*>,
     raws: List<String>,
+    fieldName: String,
 ): Op<Boolean> {
     if (raws.isEmpty()) return Op.FALSE
 
     // First, try custom mappers
     if (mappersModule != null) {
         val customMapped = raws.mapNotNull { raw ->
-            mappersModule.tryMap(column.columnType, raw)
+            mappersModule.tryMap(expr.columnType, raw)
         }
         if (customMapped.size == raws.size) {
             @Suppress("UNCHECKED_CAST")
-            return (column as Column<Any>).inList(customMapped)
+            return (expr as ExpressionWithColumnType<Any>).inList(customMapped)
         }
+    }
+
+    // Handle EntityID columns (only applicable for Column type)
+    if (expr is Column<*> && expr.columnType is EntityIDColumnType<*>) {
+        return inListEntityIdValue(expr, raws, fieldName)
     }
 
     // Then, try built-in mappers
-    if (column.columnType is EntityIDColumnType<*>) {
-        return inListEntityIdValue(column, raws)
-    }
-    if (isDateOnlyColumn(column)) {
-        val values: List<Any> = raws.map { parseDateForColumn(column, it) }
+    if (isDateOnlyExpr(expr)) {
+        val values: List<Any> = raws.map { parseDateForExpr(expr, it, fieldName) }
         @Suppress("UNCHECKED_CAST")
-        return (column as Column<Any>).inList(values)
+        return (expr as ExpressionWithColumnType<Any>).inList(values)
     }
-    if (isTimestampColumn(column)) {
-        val values: List<Any> = raws.map { parseTimestampForColumn(column, it) }
+    if (isTimestampExpr(expr)) {
+        val values: List<Any> = raws.map { parseTimestampForExpr(expr, it) }
         @Suppress("UNCHECKED_CAST")
-        return (column as Column<Any>).inList(values)
+        return (expr as ExpressionWithColumnType<Any>).inList(values)
     }
-    return when (column.columnType) {
-        is IntegerColumnType -> (column as Column<Int>).inList(raws.map(String::toInt))
-        is LongColumnType -> (column as Column<Long>).inList(raws.map(String::toLong))
-        is ShortColumnType -> (column as Column<Short>).inList(raws.map(String::toShort))
-        is DoubleColumnType -> (column as Column<Double>).inList(raws.map(String::toDouble))
-        is VarCharColumnType, is TextColumnType -> (column as Column<String>).inList(raws)
-        is UUIDColumnType -> (column as Column<UUID>).inList(raws.map(UUID::fromString))
-        is BooleanColumnType -> (column as Column<Boolean>).inList(raws.map(String::toBooleanStrict))
+    return when (expr.columnType) {
+        is IntegerColumnType -> (expr as ExpressionWithColumnType<Int>).inList(raws.map(String::toInt))
+        is LongColumnType -> (expr as ExpressionWithColumnType<Long>).inList(raws.map(String::toLong))
+        is ShortColumnType -> (expr as ExpressionWithColumnType<Short>).inList(raws.map(String::toShort))
+        is DoubleColumnType -> (expr as ExpressionWithColumnType<Double>).inList(raws.map(String::toDouble))
+        is VarCharColumnType, is TextColumnType -> (expr as ExpressionWithColumnType<String>).inList(raws)
+        is UUIDColumnType -> (expr as ExpressionWithColumnType<UUID>).inList(raws.map(UUID::fromString))
+        is BooleanColumnType -> (expr as ExpressionWithColumnType<Boolean>).inList(raws.map(String::toBooleanStrict))
         is EnumerationNameColumnType<*> -> {
             @Suppress("UNCHECKED_CAST")
-            (column as Column<Enum<*>>).inList(raws.map { enumValueOf(column, it) })
+            (expr as ExpressionWithColumnType<Enum<*>>).inList(raws.map { enumValueOf(expr, it) })
         }
 
-        else -> error("Unsupported IN for column ${column.name}")
+        else -> error("Unsupported IN for field '$fieldName'")
     }
 }
 
 context(mappersModule: ColumnMappersModule?)
 private fun betweenValues(
-    column: Column<*>,
+    expr: ExpressionWithColumnType<*>,
     raws: List<String>,
+    fieldName: String,
 ): Op<Boolean> {
     if (raws.isEmpty()) return Op.FALSE
     require(raws.size == 2) { "BETWEEN requires exactly two values" }
@@ -402,208 +426,224 @@ private fun betweenValues(
 
     // First, try custom mappers
     if (mappersModule != null) {
-        val left = mappersModule.tryMap(column.columnType, from)
-        val right = mappersModule.tryMap(column.columnType, to)
+        val left = mappersModule.tryMap(expr.columnType, from)
+        val right = mappersModule.tryMap(expr.columnType, to)
         if (left != null && right != null) {
-            require(left is Comparable<*>) { "BETWEEN requires comparable values for column ${column.name}" }
-            require(right is Comparable<*>) { "BETWEEN requires comparable values for column ${column.name}" }
+            require(left is Comparable<*>) { "BETWEEN requires comparable values for field '$fieldName'" }
+            require(right is Comparable<*>) { "BETWEEN requires comparable values for field '$fieldName'" }
             @Suppress("UNCHECKED_CAST")
-            return (column as Column<Comparable<Any>>).between(left as Comparable<Any>, right as Comparable<Any>)
+            return (expr as ExpressionWithColumnType<Comparable<Any>>).between(
+                left as Comparable<Any>,
+                right as Comparable<Any>
+            )
         }
     }
 
     // Then, try built-in mappers
-    if (isDateOnlyColumn(column)) {
-        val left = parseDateForColumn(column, from)
-        val right = parseDateForColumn(column, to)
+    if (isDateOnlyExpr(expr)) {
+        val left = parseDateForExpr(expr, from, fieldName)
+        val right = parseDateForExpr(expr, to, fieldName)
         @Suppress("UNCHECKED_CAST")
-        return (column as Column<Comparable<Any>>).between(left as Comparable<Any>, right as Comparable<Any>)
+        return (expr as ExpressionWithColumnType<Comparable<Any>>).between(
+            left as Comparable<Any>,
+            right as Comparable<Any>
+        )
     }
-    if (isTimestampColumn(column)) {
-        val left = parseTimestampForColumn(column, from)
-        val right = parseTimestampForColumn(column, to)
+    if (isTimestampExpr(expr)) {
+        val left = parseTimestampForExpr(expr, from)
+        val right = parseTimestampForExpr(expr, to)
         @Suppress("UNCHECKED_CAST")
-        return (column as Column<Comparable<Any>>).between(left as Comparable<Any>, right as Comparable<Any>)
+        return (expr as ExpressionWithColumnType<Comparable<Any>>).between(
+            left as Comparable<Any>,
+            right as Comparable<Any>
+        )
     }
-    return when (column.columnType) {
-        is IntegerColumnType -> (column as Column<Int>).between(from.toInt(), to.toInt())
-        is LongColumnType -> (column as Column<Long>).between(from.toLong(), to.toLong())
-        is ShortColumnType -> (column as Column<Short>).between(from.toShort(), to.toShort())
-        is DoubleColumnType -> (column as Column<Double>).between(from.toDouble(), to.toDouble())
-        is VarCharColumnType, is TextColumnType -> (column as Column<String>).between(from, to)
-        else -> error("Unsupported BETWEEN for column ${column.name}")
+    return when (expr.columnType) {
+        is IntegerColumnType -> (expr as ExpressionWithColumnType<Int>).between(from.toInt(), to.toInt())
+        is LongColumnType -> (expr as ExpressionWithColumnType<Long>).between(from.toLong(), to.toLong())
+        is ShortColumnType -> (expr as ExpressionWithColumnType<Short>).between(from.toShort(), to.toShort())
+        is DoubleColumnType -> (expr as ExpressionWithColumnType<Double>).between(from.toDouble(), to.toDouble())
+        is VarCharColumnType, is TextColumnType -> (expr as ExpressionWithColumnType<String>).between(from, to)
+        else -> error("Unsupported BETWEEN for field '$fieldName'")
     }
 }
 
 context(mappersModule: ColumnMappersModule?)
 private fun compareGreater(
-    column: Column<*>,
+    expr: ExpressionWithColumnType<*>,
     raw: String?,
+    fieldName: String,
 ): Op<Boolean> {
     requireNotNull(raw) { "Comparison requires a value" }
 
     // First, try custom mappers
     if (mappersModule != null) {
-        val mapped = mappersModule.tryMap(column.columnType, raw)
+        val mapped = mappersModule.tryMap(expr.columnType, raw)
         if (mapped != null) {
-            require(mapped is Comparable<*>) { "Comparison requires comparable value for column ${column.name}" }
+            require(mapped is Comparable<*>) { "Comparison requires comparable value for field '$fieldName'" }
             @Suppress("UNCHECKED_CAST")
-            return (column as Column<Comparable<Any>>).greater(mapped as Comparable<Any>)
+            return (expr as ExpressionWithColumnType<Comparable<Any>>).greater(mapped as Comparable<Any>)
         }
     }
 
     // Then, try built-in mappers
-    if (isDateOnlyColumn(column)) {
-        val value = parseDateForColumn(column, raw)
+    if (isDateOnlyExpr(expr)) {
+        val value = parseDateForExpr(expr, raw, fieldName)
         @Suppress("UNCHECKED_CAST")
-        return (column as Column<Comparable<Any>>).greater(value as Comparable<Any>)
+        return (expr as ExpressionWithColumnType<Comparable<Any>>).greater(value as Comparable<Any>)
     }
-    if (isTimestampColumn(column)) {
-        val value = parseTimestampForColumn(column, raw)
+    if (isTimestampExpr(expr)) {
+        val value = parseTimestampForExpr(expr, raw)
         @Suppress("UNCHECKED_CAST")
-        return (column as Column<Comparable<Any>>).greater(value as Comparable<Any>)
+        return (expr as ExpressionWithColumnType<Comparable<Any>>).greater(value as Comparable<Any>)
     }
-    return when (column.columnType) {
-        is IntegerColumnType -> (column as Column<Int>).greater(raw.toInt())
-        is LongColumnType -> (column as Column<Long>).greater(raw.toLong())
-        is ShortColumnType -> (column as Column<Short>).greater(raw.toShort())
-        is DoubleColumnType -> (column as Column<Double>).greater(raw.toDouble())
-        is VarCharColumnType, is TextColumnType -> (column as Column<String>).greater(raw)
-        is UUIDColumnType -> (column as Column<UUID>).greater(UUID.fromString(raw))
-        else -> error("Unsupported comparison for column ${column.name}")
+    return when (expr.columnType) {
+        is IntegerColumnType -> (expr as ExpressionWithColumnType<Int>).greater(raw.toInt())
+        is LongColumnType -> (expr as ExpressionWithColumnType<Long>).greater(raw.toLong())
+        is ShortColumnType -> (expr as ExpressionWithColumnType<Short>).greater(raw.toShort())
+        is DoubleColumnType -> (expr as ExpressionWithColumnType<Double>).greater(raw.toDouble())
+        is VarCharColumnType, is TextColumnType -> (expr as ExpressionWithColumnType<String>).greater(raw)
+        is UUIDColumnType -> (expr as ExpressionWithColumnType<UUID>).greater(UUID.fromString(raw))
+        else -> error("Unsupported comparison for field '$fieldName'")
     }
 }
 
 context(mappersModule: ColumnMappersModule?)
 private fun compareGreaterEq(
-    column: Column<*>,
+    expr: ExpressionWithColumnType<*>,
     raw: String?,
+    fieldName: String,
 ): Op<Boolean> {
     requireNotNull(raw) { "Comparison requires a value" }
 
     // First, try custom mappers
     if (mappersModule != null) {
-        val mapped = mappersModule.tryMap(column.columnType, raw)
+        val mapped = mappersModule.tryMap(expr.columnType, raw)
         if (mapped != null) {
-            require(mapped is Comparable<*>) { "Comparison requires comparable value for column ${column.name}" }
+            require(mapped is Comparable<*>) { "Comparison requires comparable value for field '$fieldName'" }
             @Suppress("UNCHECKED_CAST")
-            return (column as Column<Comparable<Any>>).greaterEq(mapped as Comparable<Any>)
+            return (expr as ExpressionWithColumnType<Comparable<Any>>).greaterEq(mapped as Comparable<Any>)
         }
     }
 
     // Then, try built-in mappers
-    if (isDateOnlyColumn(column)) {
-        val value = parseDateForColumn(column, raw)
+    if (isDateOnlyExpr(expr)) {
+        val value = parseDateForExpr(expr, raw, fieldName)
         @Suppress("UNCHECKED_CAST")
-        return (column as Column<Comparable<Any>>).greaterEq(value as Comparable<Any>)
+        return (expr as ExpressionWithColumnType<Comparable<Any>>).greaterEq(value as Comparable<Any>)
     }
-    if (isTimestampColumn(column)) {
-        val value = parseTimestampForColumn(column, raw)
+    if (isTimestampExpr(expr)) {
+        val value = parseTimestampForExpr(expr, raw)
         @Suppress("UNCHECKED_CAST")
-        return (column as Column<Comparable<Any>>).greaterEq(value as Comparable<Any>)
+        return (expr as ExpressionWithColumnType<Comparable<Any>>).greaterEq(value as Comparable<Any>)
     }
-    return when (column.columnType) {
-        is IntegerColumnType -> (column as Column<Int>).greaterEq(raw.toInt())
-        is LongColumnType -> (column as Column<Long>).greaterEq(raw.toLong())
-        is ShortColumnType -> (column as Column<Short>).greaterEq(raw.toShort())
-        is DoubleColumnType -> (column as Column<Double>).greaterEq(raw.toDouble())
-        is VarCharColumnType, is TextColumnType -> (column as Column<String>).greaterEq(raw)
-        is UUIDColumnType -> (column as Column<UUID>).greaterEq(UUID.fromString(raw))
-        else -> error("Unsupported comparison for column ${column.name}")
+    return when (expr.columnType) {
+        is IntegerColumnType -> (expr as ExpressionWithColumnType<Int>).greaterEq(raw.toInt())
+        is LongColumnType -> (expr as ExpressionWithColumnType<Long>).greaterEq(raw.toLong())
+        is ShortColumnType -> (expr as ExpressionWithColumnType<Short>).greaterEq(raw.toShort())
+        is DoubleColumnType -> (expr as ExpressionWithColumnType<Double>).greaterEq(raw.toDouble())
+        is VarCharColumnType, is TextColumnType -> (expr as ExpressionWithColumnType<String>).greaterEq(raw)
+        is UUIDColumnType -> (expr as ExpressionWithColumnType<UUID>).greaterEq(UUID.fromString(raw))
+        else -> error("Unsupported comparison for field '$fieldName'")
     }
 }
 
 context(mappersModule: ColumnMappersModule?)
 private fun compareLess(
-    column: Column<*>,
+    expr: ExpressionWithColumnType<*>,
     raw: String?,
+    fieldName: String,
 ): Op<Boolean> {
     requireNotNull(raw) { "Comparison requires a value" }
 
     // First, try custom mappers
     if (mappersModule != null) {
-        val mapped = mappersModule.tryMap(column.columnType, raw)
+        val mapped = mappersModule.tryMap(expr.columnType, raw)
         if (mapped != null) {
-            require(mapped is Comparable<*>) { "Comparison requires comparable value for column ${column.name}" }
+            require(mapped is Comparable<*>) { "Comparison requires comparable value for field '$fieldName'" }
             @Suppress("UNCHECKED_CAST")
-            return (column as Column<Comparable<Any>>).less(mapped as Comparable<Any>)
+            return (expr as ExpressionWithColumnType<Comparable<Any>>).less(mapped as Comparable<Any>)
         }
     }
 
     // Then, try built-in mappers
-    if (isDateOnlyColumn(column)) {
-        val value = parseDateForColumn(column, raw)
+    if (isDateOnlyExpr(expr)) {
+        val value = parseDateForExpr(expr, raw, fieldName)
         @Suppress("UNCHECKED_CAST")
-        return (column as Column<Comparable<Any>>).less(value as Comparable<Any>)
+        return (expr as ExpressionWithColumnType<Comparable<Any>>).less(value as Comparable<Any>)
     }
-    if (isTimestampColumn(column)) {
-        val value = parseTimestampForColumn(column, raw)
+    if (isTimestampExpr(expr)) {
+        val value = parseTimestampForExpr(expr, raw)
         @Suppress("UNCHECKED_CAST")
-        return (column as Column<Comparable<Any>>).less(value as Comparable<Any>)
+        return (expr as ExpressionWithColumnType<Comparable<Any>>).less(value as Comparable<Any>)
     }
-    return when (column.columnType) {
-        is IntegerColumnType -> (column as Column<Int>).less(raw.toInt())
-        is LongColumnType -> (column as Column<Long>).less(raw.toLong())
-        is ShortColumnType -> (column as Column<Short>).less(raw.toShort())
-        is DoubleColumnType -> (column as Column<Double>).less(raw.toDouble())
-        is VarCharColumnType, is TextColumnType -> (column as Column<String>).less(raw)
-        is UUIDColumnType -> (column as Column<UUID>).less(UUID.fromString(raw))
-        else -> error("Unsupported comparison for column ${column.name}")
+    return when (expr.columnType) {
+        is IntegerColumnType -> (expr as ExpressionWithColumnType<Int>).less(raw.toInt())
+        is LongColumnType -> (expr as ExpressionWithColumnType<Long>).less(raw.toLong())
+        is ShortColumnType -> (expr as ExpressionWithColumnType<Short>).less(raw.toShort())
+        is DoubleColumnType -> (expr as ExpressionWithColumnType<Double>).less(raw.toDouble())
+        is VarCharColumnType, is TextColumnType -> (expr as ExpressionWithColumnType<String>).less(raw)
+        is UUIDColumnType -> (expr as ExpressionWithColumnType<UUID>).less(UUID.fromString(raw))
+        else -> error("Unsupported comparison for field '$fieldName'")
     }
 }
 
 context(mappersModule: ColumnMappersModule?)
 private fun compareLessEq(
-    column: Column<*>,
+    expr: ExpressionWithColumnType<*>,
     raw: String?,
+    fieldName: String,
 ): Op<Boolean> {
     requireNotNull(raw) { "Comparison requires a value" }
 
     // First, try custom mappers
     if (mappersModule != null) {
-        val mapped = mappersModule.tryMap(column.columnType, raw)
+        val mapped = mappersModule.tryMap(expr.columnType, raw)
         if (mapped != null) {
-            require(mapped is Comparable<*>) { "Comparison requires comparable value for column ${column.name}" }
+            require(mapped is Comparable<*>) { "Comparison requires comparable value for field '$fieldName'" }
             @Suppress("UNCHECKED_CAST")
-            return (column as Column<Comparable<Any>>).lessEq(mapped as Comparable<Any>)
+            return (expr as ExpressionWithColumnType<Comparable<Any>>).lessEq(mapped as Comparable<Any>)
         }
     }
 
     // Then, try built-in mappers
-    if (isDateOnlyColumn(column)) {
-        val value = parseDateForColumn(column, raw)
+    if (isDateOnlyExpr(expr)) {
+        val value = parseDateForExpr(expr, raw, fieldName)
         @Suppress("UNCHECKED_CAST")
-        return (column as Column<Comparable<Any>>).lessEq(value as Comparable<Any>)
+        return (expr as ExpressionWithColumnType<Comparable<Any>>).lessEq(value as Comparable<Any>)
     }
-    if (isTimestampColumn(column)) {
-        val value = parseTimestampForColumn(column, raw)
+    if (isTimestampExpr(expr)) {
+        val value = parseTimestampForExpr(expr, raw)
         @Suppress("UNCHECKED_CAST")
-        return (column as Column<Comparable<Any>>).lessEq(value as Comparable<Any>)
+        return (expr as ExpressionWithColumnType<Comparable<Any>>).lessEq(value as Comparable<Any>)
     }
-    return when (column.columnType) {
-        is IntegerColumnType -> (column as Column<Int>).lessEq(raw.toInt())
-        is LongColumnType -> (column as Column<Long>).lessEq(raw.toLong())
-        is ShortColumnType -> (column as Column<Short>).lessEq(raw.toShort())
-        is DoubleColumnType -> (column as Column<Double>).lessEq(raw.toDouble())
-        is VarCharColumnType, is TextColumnType -> (column as Column<String>).lessEq(raw)
-        is UUIDColumnType -> (column as Column<UUID>).lessEq(UUID.fromString(raw))
-        else -> error("Unsupported comparison for column ${column.name}")
+    return when (expr.columnType) {
+        is IntegerColumnType -> (expr as ExpressionWithColumnType<Int>).lessEq(raw.toInt())
+        is LongColumnType -> (expr as ExpressionWithColumnType<Long>).lessEq(raw.toLong())
+        is ShortColumnType -> (expr as ExpressionWithColumnType<Short>).lessEq(raw.toShort())
+        is DoubleColumnType -> (expr as ExpressionWithColumnType<Double>).lessEq(raw.toDouble())
+        is VarCharColumnType, is TextColumnType -> (expr as ExpressionWithColumnType<String>).lessEq(raw)
+        is UUIDColumnType -> (expr as ExpressionWithColumnType<UUID>).lessEq(UUID.fromString(raw))
+        else -> error("Unsupported comparison for field '$fieldName'")
     }
 }
 
 @Suppress("UNCHECKED_CAST")
-private fun enumValueOf(column: Column<*>, name: String): Enum<*> {
-    val type = column.columnType as EnumerationNameColumnType<*>
+private fun enumValueOf(expr: ExpressionWithColumnType<*>, name: String): Enum<*> {
+    val type = expr.columnType as EnumerationNameColumnType<*>
     val constants = type.klass.java.enumConstants as Array<out Enum<*>>
     return constants.first { it.name == name }
 }
+
+// --- EntityID helpers (Column-specific) ---
 
 context(mappersModule: ColumnMappersModule?)
 private fun eqEntityIdValue(
     column: Column<EntityID<*>>,
     raw: String,
+    fieldName: String,
 ): Op<Boolean> {
-    val rawColumnType = rawColumnTypeOf(column)
+    val rawColumnType = rawColumnTypeOf(column, fieldName)
     if (mappersModule != null) {
         @Suppress("UNCHECKED_CAST")
         val customMapped = mappersModule.tryMap(rawColumnType as IColumnType<Any>, raw)
@@ -618,7 +658,7 @@ private fun eqEntityIdValue(
         is ShortColumnType -> (column as Column<EntityID<Short>>).eq(raw.toShort())
         is VarCharColumnType -> (column as Column<EntityID<String>>).eq(raw)
         is UUIDColumnType -> (column as Column<EntityID<UUID>>).eq(UUID.fromString(raw))
-        else -> error("Unsupported equality for column ${column.name}")
+        else -> error("Unsupported equality for field '$fieldName'")
     }
 }
 
@@ -626,8 +666,9 @@ context(mappersModule: ColumnMappersModule?)
 private fun inListEntityIdValue(
     column: Column<*>,
     raws: List<String>,
+    fieldName: String,
 ): Op<Boolean> {
-    val rawColumnType = rawColumnTypeOf(column)
+    val rawColumnType = rawColumnTypeOf(column, fieldName)
     if (mappersModule != null) {
         @Suppress("UNCHECKED_CAST")
         val customMapped = raws.mapNotNull { raw ->
@@ -638,19 +679,17 @@ private fun inListEntityIdValue(
             return (column as Column<EntityID<Any>>).inList(customMapped)
         }
     }
-    return when (rawColumnTypeOf(column)) {
+    return when (rawColumnType) {
         is IntegerColumnType -> (column as Column<EntityID<Int>>).inList(raws.map(String::toInt))
         is LongColumnType -> (column as Column<EntityID<Long>>).inList(raws.map(String::toLong))
         is ShortColumnType -> (column as Column<EntityID<Short>>).inList(raws.map(String::toShort))
         is VarCharColumnType -> (column as Column<EntityID<String>>).inList(raws)
         is UUIDColumnType -> (column as Column<EntityID<UUID>>).inList(raws.map(UUID::fromString))
-        else -> {
-            error("Unsupported IN for column ${column.name}")
-        }
+        else -> error("Unsupported IN for field '$fieldName'")
     }
 }
 
-private fun rawColumnTypeOf(column: Column<*>): IColumnType<*> {
+private fun rawColumnTypeOf(column: Column<*>, fieldName: String): IColumnType<*> {
     val ct = column.columnType
     val isEntityId = ct is EntityIDColumnType<*>
     if (!isEntityId) return ct
@@ -658,15 +697,15 @@ private fun rawColumnTypeOf(column: Column<*>): IColumnType<*> {
         .firstOrNull { it.name == "getIdColumn" && it.parameterCount == 0 }
         ?.invoke(ct) as? Column<*>
     if (idColumn == null) {
-        error("Cannot access idColumn for EntityID column ${column.name}")
+        error("Cannot access idColumn for EntityID field '$fieldName'")
     }
     return idColumn.columnType
 }
 
-// --- Date support helpers ---
+// --- Date/Time support helpers ---
 
-private fun isDateOnlyColumn(column: Column<*>): Boolean {
-    val ct = column.columnType
+private fun isDateOnlyExpr(expr: ExpressionWithColumnType<*>): Boolean {
+    val ct = expr.columnType
     val typeName = ct.javaClass.name
     val simple = ct.javaClass.simpleName
     val looksLikeLocalDate =
@@ -678,29 +717,29 @@ private fun isDateOnlyColumn(column: Column<*>): Boolean {
     return looksLikeLocalDate || looksLikeSqlDate
 }
 
-private fun parseDateForColumn(column: Column<*>, raw: String): Any {
+private fun parseDateForExpr(expr: ExpressionWithColumnType<*>, raw: String, fieldName: String): Any {
     // Prefer kotlinx.datetime.LocalDate for kotlin-datetime columns
-    if (usesKotlinxLocalDate(column)) {
+    if (usesKotlinxLocalDateExpr(expr)) {
         return parseKotlinxLocalDate(raw)
     }
     val javaLocalDate: LocalDate = try {
         LocalDate.parse(raw)
     } catch (ex: DateTimeParseException) {
-        throw IllegalArgumentException("Invalid date format for ${column.name}: '$raw'. Expected ISO-8601 date (YYYY-MM-DD)")
+        throw IllegalArgumentException("Invalid date format for '$fieldName': '$raw'. Expected ISO-8601 date (YYYY-MM-DD)")
     }
-    // If the column is backed by java.sql.Date, convert accordingly
-    if (usesSqlDate(column)) return SqlDate.valueOf(javaLocalDate)
+    // If the expression is backed by java.sql.Date, convert accordingly
+    if (usesSqlDateExpr(expr)) return SqlDate.valueOf(javaLocalDate)
     // Otherwise, assume java.time.LocalDate
     return javaLocalDate
 }
 
-private fun usesSqlDate(column: Column<*>): Boolean {
-    val simple = column.columnType.javaClass.simpleName
+private fun usesSqlDateExpr(expr: ExpressionWithColumnType<*>): Boolean {
+    val simple = expr.columnType.javaClass.simpleName
     return simple == "DateColumnType"
 }
 
-private fun usesKotlinxLocalDate(column: Column<*>): Boolean {
-    val type = column.columnType.javaClass
+private fun usesKotlinxLocalDateExpr(expr: ExpressionWithColumnType<*>): Boolean {
+    val type = expr.columnType.javaClass
     val simple = type.simpleName
     val name = type.name
     return simple.contains("KotlinLocalDateColumnType", ignoreCase = true) || name.contains(
@@ -709,8 +748,8 @@ private fun usesKotlinxLocalDate(column: Column<*>): Boolean {
     ) && simple.contains("LocalDate", ignoreCase = true)
 }
 
-private fun isTimestampColumn(column: Column<*>): Boolean {
-    val ct = column.columnType
+private fun isTimestampExpr(expr: ExpressionWithColumnType<*>): Boolean {
+    val ct = expr.columnType
     val type = ct.javaClass
     val simple = type.simpleName
     val name = type.name
@@ -720,11 +759,11 @@ private fun isTimestampColumn(column: Column<*>): Boolean {
     return looksLikeLocalDateTime || looksLikeInstant || looksLikeTimestamp
 }
 
-private fun parseTimestampForColumn(column: Column<*>, raw: String): Any {
+private fun parseTimestampForExpr(expr: ExpressionWithColumnType<*>, raw: String): Any {
     val ldt = parseLocalDateTimeFlexible(raw)
     return when {
-        usesSqlTimestamp(column) -> SqlTimestamp.valueOf(ldt)
-        usesInstant(column) -> Instant.fromEpochMilliseconds(ldt.toInstant(ZoneOffset.UTC).toEpochMilli())
+        usesSqlTimestampExpr(expr) -> SqlTimestamp.valueOf(ldt)
+        usesInstantExpr(expr) -> Instant.fromEpochMilliseconds(ldt.toInstant(ZoneOffset.UTC).toEpochMilli())
         else -> ldt
     }
 }
@@ -742,13 +781,13 @@ private fun parseLocalDateTimeFlexible(raw: String): LocalDateTime {
     return ld.atStartOfDay()
 }
 
-private fun usesSqlTimestamp(column: Column<*>): Boolean {
-    val simple = column.columnType.javaClass.simpleName
+private fun usesSqlTimestampExpr(expr: ExpressionWithColumnType<*>): Boolean {
+    val simple = expr.columnType.javaClass.simpleName
     return simple == "TimestampColumnType" || simple.contains("DateTime", ignoreCase = true)
 }
 
-private fun usesInstant(column: Column<*>): Boolean {
-    val simple = column.columnType.javaClass.simpleName
+private fun usesInstantExpr(expr: ExpressionWithColumnType<*>): Boolean {
+    val simple = expr.columnType.javaClass.simpleName
     return simple.contains("Instant", ignoreCase = true)
 }
 
