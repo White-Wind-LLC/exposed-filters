@@ -23,9 +23,9 @@ Prerequisites: Kotlin 2.2.20, repository `mavenCentral()`.
 
 ```kotlin
 dependencies {
-    implementation("ua.wwind.exposed-filters:exposed-filters-core:1.2.0")
-    implementation("ua.wwind.exposed-filters:exposed-filters-jdbc:1.2.0")
-    implementation("ua.wwind.exposed-filters:exposed-filters-rest:1.2.0")
+    implementation("ua.wwind.exposed-filters:exposed-filters-core:1.2.1")
+    implementation("ua.wwind.exposed-filters:exposed-filters-jdbc:1.2.1")
+    implementation("ua.wwind.exposed-filters:exposed-filters-rest:1.2.1")
 }
 ```
 
