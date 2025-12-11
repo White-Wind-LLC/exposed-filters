@@ -2,6 +2,16 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.2.2] - 2025-12-11
+
+- JDBC: extend filter API to support `ExpressionWithColumnType<*>` in addition to `Column<*>`.
+    - `applyFilters(expressions, filterRequest)` now accepts any typed expression (e.g., `coalesce()`, `concat()`,
+      aliased columns).
+    - Nested field filters (e.g., `user.name`) remain supported only for `Column` types with foreign key references.
+    - Return type of `Table.propertyToColumnMap()` changed from `Map<String, Column<*>>` to
+      `Map<String, ExpressionWithColumnType<*>>`.
+- JDBC: improve error messages to include field names for better debugging.
+
 ## [1.2.1] - 2025-12-11
 
 - JDBC: add `ColumnSet` support for filters with automatic field name resolution
