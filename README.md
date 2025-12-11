@@ -31,11 +31,12 @@ dependencies {
 
 ## Compatibility
 
-| Library version | Kotlin  | Ktor  | Exposed      |
-|-----------------|---------|-------|--------------|
-| 1.2.0           | 2.2.20  | 3.3.1 | 1.0.0-rc-2   |
-| 1.0.7           | 2.2.20  | 3.3.0 | 1.0.0-rc-1   |
-| 1.0.1           | 2.2.0   | 3.2.3 | 1.0.0-beta-1 |
+| Library version | Kotlin | Ktor  | Exposed      |
+|-----------------|--------|-------|--------------|
+| 1.2.1           | 2.2.21 | 3.3.2 | 1.0.0-rc-4   |
+| 1.2.0           | 2.2.20 | 3.3.1 | 1.0.0-rc-2   |
+| 1.0.7           | 2.2.20 | 3.3.0 | 1.0.0-rc-1   |
+| 1.0.1           | 2.2.0  | 3.2.3 | 1.0.0-beta-1 |
 
 ## Quick start
 
@@ -264,6 +265,72 @@ Operator constraints:
 - `IN` requires non-empty values; `NOT_IN` with an empty `values` array is treated as a no-op (ignored).
 - Date/time operators: `EQ`, `IN`, `BETWEEN`, `GT`, `GTE`, `LT`, `LTE`, `IS_NULL`, `IS_NOT_NULL` are supported for date
   and timestamp columns.
+
+## Excluding fields from filters
+
+When building complex queries with joins, subqueries, or multi-level data aggregation, you may need to apply the same
+user filter at different query levels. However, not all fields may be available at every level — some columns might
+only exist in the final result set, or certain fields should not constrain intermediate queries.
+
+The `excludeFields` utility allows you to safely remove specific field conditions from a `FilterRequest` while
+preserving correct filtering semantics. The key guarantee is that **excluding fields will never narrow the result
+set** — it may only broaden it. This is safe because you can apply the full, unmodified filter on the final result.
+
+### How it works
+
+The behavior depends on the logical combinator:
+
+- **AND**: Removing a field broadens the result set (safe). The remaining conditions still apply.
+- **OR**: Removing a field from an OR group would narrow results (records matching only the removed condition would be
+  lost). Therefore, **the entire OR group is removed** if any direct leaf contains an excluded field.
+- **NOT**: Due to De Morgan's law, removing fields inside a NOT group can narrow results. Therefore, **the entire NOT
+  group is removed** if any child at any depth contains an excluded field.
+
+### Usage
+
+```kotlin
+val filter: FilterRequest = ...
+
+// Exclude specific fields
+val partialFilterForTable1 = filter.excludeFields("profileId")
+val partialFilterForTable2 = filter.excludeFields("userId")
+
+// Use partial filter for intermediate query (missing some columns)
+val intermediateQuery1 = SomeTable1
+        .selectAll()
+        .applyFiltersOn(SomeTable1, partialFilterForTable1)
+
+val intermediateQuery2 = SomeTable2
+        .selectAll()
+        .applyFiltersOn(SomeTable2, partialFilterForTable2)
+
+
+// Apply full filter on the final result
+val finalQuery =
+    (intermediateQuery1 union intermediateQuery2)
+        .selectAll()
+
+finalQuery
+        .applyFiltersOn(finalQuery, filter)
+```
+
+### Example scenario
+
+Imagine a query that joins `Orders` with `OrderItems` and computes a `totalAmount` field. The user sends a filter:
+
+```json
+{
+  "combinator": "AND",
+  "filters": {
+    "status": [{ "op": "EQ", "value": "COMPLETED" }],
+    "totalAmount": [{ "op": "GTE", "value": "1000" }]
+  }
+}
+```
+
+The `totalAmount` field only exists after aggregation, so you cannot apply it to the base `Orders` query. Using
+`excludeFields("totalAmount")` removes that condition for the intermediate query while keeping the `status` filter.
+After aggregation, you apply the full filter including `totalAmount` on the final dataset.
 
 ## Custom column type mappers
 
