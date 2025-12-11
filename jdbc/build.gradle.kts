@@ -8,6 +8,15 @@ dependencies {
     implementation(libs.exposed.core)
     implementation(libs.exposed.jdbc)
     implementation(kotlin("reflect"))
+
+    testImplementation(platform(libs.junit.bom))
+    testImplementation(libs.junit.jupiter)
+    testImplementation(libs.h2)
+    testImplementation(libs.exposed.kotlin.datetime)
+    testImplementation(libs.kotlinx.datetime)
+    testImplementation(libs.kotlinx.serialization)
+    testImplementation(libs.slf4j.simple)
+    testRuntimeOnly("org.junit.platform:junit-platform-launcher")
 }
 
 kotlin {
@@ -16,6 +25,17 @@ kotlin {
     compilerOptions {
         // Enable experimental context parameters feature used in this module
         freeCompilerArgs.add("-Xcontext-parameters")
+    }
+}
+
+tasks.test {
+    useJUnitPlatform()
+    testLogging {
+        events("passed", "failed", "skipped")
+        exceptionFormat = org.gradle.api.tasks.testing.logging.TestExceptionFormat.FULL
+        showExceptions = true
+        showCauses = true
+        showStackTraces = true
     }
 }
 
