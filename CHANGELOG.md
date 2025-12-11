@@ -2,6 +2,17 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.2.1] - 2025-12-11
+
+- JDBC: add `ColumnSet` support for filters with automatic field name resolution
+    - `applyFiltersOn` now accepts any `ColumnSet` (`Table`, `Join`, `Alias`, etc.) instead of only `Table`.
+    - For `Table`: filter field names are matched against Kotlin property names (e.g., `warehouseId`).
+    - For other `ColumnSet` types: filter field names are matched against SQL column names (e.g., `warehouse_id`).
+    - New `applyFilters(columns, filterRequest)` overloads allow fully custom column mapping for maximum flexibility.
+    - `Table.propertyToColumnMap()` is now public for advanced use cases.
+- JDBC: add comprehensive test suite covering all filter operators and column types.
+- Dependencies: bump Kotlin to `2.2.21`, Exposed to `1.0.0-rc-4`, Ktor to `3.3.2`.
+
 ## [1.2.0] - 2025-11-03
 
 - JDBC: introduce pluggable value mapping for custom column types
