@@ -4,6 +4,7 @@ package ua.wwind.exposed.filters.jdbc
 
 import org.jetbrains.exposed.v1.core.BooleanColumnType
 import org.jetbrains.exposed.v1.core.Column
+import org.jetbrains.exposed.v1.core.ColumnSet
 import org.jetbrains.exposed.v1.core.DoubleColumnType
 import org.jetbrains.exposed.v1.core.EntityIDColumnType
 import org.jetbrains.exposed.v1.core.EnumerationNameColumnType
@@ -53,10 +54,30 @@ import kotlin.time.Instant
 import java.sql.Date as SqlDate
 import java.sql.Timestamp as SqlTimestamp
 
-public fun Query.applyFiltersOn(table: Table, filterRequest: FilterRequest?): Query {
+/**
+ * Applies filters to a query using columns from the given [ColumnSet].
+ *
+ * - For [Table]: filter field names are matched against **Kotlin property names** (e.g., `warehouseId`)
+ * - For other [ColumnSet] types (Join, Alias, etc.): filter field names are matched against
+ *   **SQL column names** (e.g., `warehouse_id`)
+ *
+ * Example with Table:
+ * ```
+ * UserTable.selectAll()
+ *     .applyFiltersOn(UserTable, filter)  // field: "name", "age" (property names)
+ * ```
+ *
+ * Example with Join:
+ * ```
+ * val join = UserTable innerJoin ProductTable
+ * join.selectAll()
+ *     .applyFiltersOn(join, filter)  // field: "name", "title", "warehouse_id" (SQL names)
+ * ```
+ */
+public fun Query.applyFiltersOn(columnSet: ColumnSet, filterRequest: FilterRequest?): Query {
     if (filterRequest == null) return this
     val root = filterRequest.root
-    val columns = table.propertyToColumnMap()
+    val columns = columnSet.toColumnMap()
     val predicate = context(null as ColumnMappersModule?) { nodeToPredicate(root, columns) } ?: return this
     return andWhere { predicate }
 }
@@ -66,18 +87,66 @@ public fun Query.applyFiltersOn(table: Table, filterRequest: FilterRequest?): Qu
  * for custom column types when standard mappings do not apply.
  */
 public fun Query.applyFiltersOn(
-    table: Table,
+    columnSet: ColumnSet,
     filterRequest: FilterRequest?,
     mappersModule: ColumnMappersModule
 ): Query {
     if (filterRequest == null) return this
     val root = filterRequest.root
-    val columns = table.propertyToColumnMap()
+    val columns = columnSet.toColumnMap()
     val predicate = context(mappersModule) { nodeToPredicate(root, columns) } ?: return this
     return andWhere { predicate }
 }
 
-private fun Table.propertyToColumnMap(): Map<String, Column<*>> =
+/**
+ * Applies filters using a custom column mapping.
+ * This is the most flexible variant — you control exactly how filter field names
+ * map to columns.
+ *
+ * Example:
+ * ```
+ * val columns = mapOf(
+ *     "userName" to UserTable.name,
+ *     "productTitle" to ProductTable.title
+ * )
+ * query.applyFilters(columns, filter)
+ * ```
+ */
+public fun Query.applyFilters(
+    columns: Map<String, Column<*>>,
+    filterRequest: FilterRequest?
+): Query {
+    if (filterRequest == null) return this
+    val root = filterRequest.root
+    val predicate = context(null as ColumnMappersModule?) { nodeToPredicate(root, columns) } ?: return this
+    return andWhere { predicate }
+}
+
+/**
+ * Same as [applyFilters] but allows passing a [mappersModule].
+ */
+public fun Query.applyFilters(
+    columns: Map<String, Column<*>>,
+    filterRequest: FilterRequest?,
+    mappersModule: ColumnMappersModule
+): Query {
+    if (filterRequest == null) return this
+    val root = filterRequest.root
+    val predicate = context(mappersModule) { nodeToPredicate(root, columns) } ?: return this
+    return andWhere { predicate }
+}
+
+/**
+ * Converts a [ColumnSet] to a map of field names to columns.
+ * - For [Table]: uses Kotlin property names (camelCase)
+ * - For other types (Join, Alias, etc.): uses SQL column names
+ */
+private fun ColumnSet.toColumnMap(): Map<String, Column<*>> = when (this) {
+    is Table -> this.propertyToColumnMap()
+    else -> this.columns.associateBy { it.name }
+}
+
+public fun Table.propertyToColumnMap(): Map<String, Column<*>> =
     this::class.memberProperties
         .mapNotNull { prop ->
             @Suppress("UNCHECKED_CAST")
