@@ -17,6 +17,25 @@ Type-safe, normalized filter model and utilities for building dynamic queries wi
     - `ua.wwind.exposed-filters:exposed-filters-jdbc:<version>`
     - `ua.wwind.exposed-filters:exposed-filters-rest:<version>`
 
+## Table of Contents
+
+- [Installation](#installation)
+- [Compatibility](#compatibility)
+- [Quick start](#quick-start)
+- [Field naming in filters](#field-naming-in-filters)
+- [Filtering by related entities (references)](#filtering-by-related-entities-references)
+- [Validation and errors](#validation-and-errors)
+- [JSON request format](#json-request-format)
+- [Supported operators](#supported-operators)
+- [Type handling (JDBC adapter)](#type-handling-jdbc-adapter)
+- [Excluding fields from filters](#excluding-fields-from-filters)
+- [Custom column type mappers](#custom-column-type-mappers)
+- [Custom expression maps for complex queries](#custom-expression-maps-for-complex-queries)
+- [Example: filtering by date and timestamp](#example-filtering-by-date-and-timestamp)
+- [Why use this](#why-use-this)
+- [CI and Release](#ci-and-release)
+- [License](#license)
+
 ## Installation
 
 Prerequisites: Kotlin 2.2.20, repository `mavenCentral()`.
@@ -431,6 +450,118 @@ MyTable
     .selectAll()
     .applyFiltersOn(MyTable, filterRequest, mappers)
 ```
+
+## Custom expression maps for complex queries
+
+When working with complex queries involving unions, joins, or computed expressions, you may need to explicitly map field
+names to specific SQL expressions rather than relying on the default table column lookup. This is useful when:
+
+- **Union queries**: combining results from multiple sources where field values come from different tables or
+  expressions
+- **Aliased expressions**: using computed fields, literal values, or expressions with aliases
+- **Joined queries**: selecting columns from multiple related tables in a single result set
+
+### Basic approach
+
+Instead of using `applyFiltersOn(table, filter)`, use the lower-level `applyFilters(expressionMap, filter)` method and
+provide an explicit mapping from field names to SQL expressions.
+
+### Example: Union query with mixed sources
+
+Consider a query that combines employees and contractors into a unified result set:
+
+```kotlin
+object Employees : Table("employees") {
+    val id = integer("id")
+    val name = varchar("name", 100)
+    val salary = integer("salary")
+    val departmentId = integer("department_id")
+}
+
+object Contractors : Table("contractors") {
+    val id = integer("id")
+    val name = varchar("name", 100)
+    val hourlyRate = integer("hourly_rate")
+    val projectId = integer("project_id")
+}
+
+// Build column mappings for union query
+fun buildWorkersQuery(filter: FilterRequest?): Query {
+    // Map property names to expressions for employees
+    val employeeColumns = linkedMapOf(
+        "id" to Employees.id.alias("id"),
+        "name" to Employees.name.alias("name"),
+        "rate" to Employees.salary.alias("rate"),
+        "assignmentId" to Employees.departmentId.alias("assignmentId"),
+        "type" to stringLiteral("EMPLOYEE").alias("type")  // computed field
+    )
+    
+    // Map property names to expressions for contractors
+    val contractorColumns = linkedMapOf(
+        "id" to Contractors.id.alias("id"),
+        "name" to Contractors.name.alias("name"),
+        "rate" to Contractors.hourlyRate.alias("rate"),
+        "assignmentId" to Contractors.projectId.alias("assignmentId"),
+        "type" to stringLiteral("CONTRACTOR").alias("type")
+    )
+    
+    // Build and union queries with filters applied
+    val employeeQuery = Employees
+        .select(employeeColumns.values.toList())
+        .applyFilters(employeeColumns, filter)
+    
+    val contractorQuery = Contractors
+        .select(contractorColumns.values.toList())
+        .applyFilters(contractorColumns, filter)
+    
+    val unionAlias = employeeQuery.unionAll(contractorQuery).alias("workers")
+    
+    // Map union result columns to property names
+    val finalMapping = employeeColumns.keys.withIndex().associate { (index, propertyName) ->
+        propertyName to unionAlias.fields[index] as ExpressionWithColumnType<*>
+    }
+    
+    return unionAlias.selectAll().applyFilters(finalMapping, filter)
+}
+```
+
+### Key points
+
+- **LinkedHashMap preserves order**: Use `LinkedHashMap` to ensure column order matches between queries in a union
+- **Consistent property names**: Both sub-queries must map the same property names, even if they source from different
+  columns
+- **Computed expressions**: You can include literal values, calculated fields, or any Exposed expression
+- **Apply filters at each level**: Filters can be applied to individual queries before union, and again to the final
+  result
+- **Position-based mapping**: After union, map union alias fields by position to property names
+
+### Filtering the result
+
+Users can filter the unified result using property names from the expression map:
+
+```json
+{
+  "filters": {
+    "type": [{ "op": "EQ", "value": "EMPLOYEE" }],
+    "rate": [{ "op": "GTE", "value": "50000" }],
+    "name": [{ "op": "CONTAINS", "value": "John" }]
+  }
+}
+```
+
+The filter will be correctly applied whether the record comes from `Employees` or `Contractors`, because both map to the
+same unified property names.
+
+### Integration with custom mappers
+
+Custom expression maps work seamlessly with custom column type mappers:
+
+```kotlin
+val query = buildWorkersQuery(filter)
+    .applyFilters(expressionMap, filter, customColumnMappers)
+```
+
+This allows you to handle both complex query structures and custom column types in the same query.
 
 ## Example: filtering by date and timestamp
 
