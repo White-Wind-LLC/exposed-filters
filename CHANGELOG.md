@@ -2,6 +2,10 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.2.3] - 2025-12-26
+ 
+- fix: handle NOT_IN operator values properly in filter extraction
+
 ## [1.2.2] - 2025-12-11
 
 - JDBC: extend filter API to support `ExpressionWithColumnType<*>` in addition to `Column<*>`.
