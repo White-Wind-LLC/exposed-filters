@@ -1,9 +1,13 @@
 package ua.wwind.exposed.filters.core
 
+import kotlinx.serialization.Serializable
+
+@Serializable
 public enum class FilterOperator {
     EQ, NEQ, CONTAINS, STARTS_WITH, ENDS_WITH, IN, NOT_IN, BETWEEN, GT, GTE, LT, LTE, IS_NULL, IS_NOT_NULL
 }
 
+@Serializable
 public enum class FilterCombinator { AND, OR, NOT }
 
 public data class FieldFilter(

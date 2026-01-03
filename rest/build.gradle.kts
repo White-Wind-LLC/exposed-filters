@@ -8,6 +8,16 @@ dependencies {
     implementation(project(":core"))
     implementation(libs.ktor.server.core)
     implementation(libs.kotlinx.serialization)
+    testImplementation(platform(libs.junit.bom))
+    testImplementation(libs.junit.jupiter)
+    testRuntimeOnly("org.junit.platform:junit-platform-launcher")
+}
+
+tasks.test {
+    useJUnitPlatform()
+    testLogging {
+        events("passed", "failed", "skipped")
+    }
 }
 
 kotlin {

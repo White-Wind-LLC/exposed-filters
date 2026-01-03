@@ -1,16 +1,10 @@
 package ua.wwind.exposed.filters.rest
 
-import io.ktor.server.application.ApplicationCall
-import io.ktor.server.request.receiveNullable
+import io.ktor.server.application.*
+import io.ktor.server.request.*
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
-import ua.wwind.exposed.filters.core.FieldFilter
-import ua.wwind.exposed.filters.core.FilterCombinator
-import ua.wwind.exposed.filters.core.FilterGroup
-import ua.wwind.exposed.filters.core.FilterLeaf
-import ua.wwind.exposed.filters.core.FilterNode
-import ua.wwind.exposed.filters.core.FilterOperator
-import ua.wwind.exposed.filters.core.FilterRequest
+import ua.wwind.exposed.filters.core.*
 
 @Serializable
 internal data class ConditionDto(
@@ -78,7 +72,13 @@ private fun buildFilterRequestOrNull(body: FilterBodyDto): FilterRequest? {
         combinedChildren.isEmpty() -> null
         // Preserve previous behavior for only-filters case
         topLeaf != null && nestedChildren.isEmpty() -> {
-            if (combinator == FilterCombinator.AND) topLeaf else FilterGroup(combinator, listOf(topLeaf))
+            if (combinator == FilterCombinator.AND) {
+                topLeaf
+            } else {
+                // For OR/NOT: wrap each predicate in its own FilterLeaf so combinator applies correctly
+                val individualLeaves = topLeaf.predicates.map { FilterLeaf(listOf(it)) }
+                FilterGroup(combinator, individualLeaves)
+            }
         }
 
         else -> {
@@ -104,7 +104,9 @@ private fun FilterNodeDto.toNodeOrNull(): FilterNode? {
             if (comb == FilterCombinator.AND) {
                 leaf
             } else {
-                FilterGroup(comb, listOf(leaf))
+                // For OR/NOT: wrap each predicate in its own FilterLeaf so combinator applies correctly
+                val individualLeaves = leaf.predicates.map { FilterLeaf(listOf(it)) }
+                FilterGroup(comb, individualLeaves)
             }
         }
 
