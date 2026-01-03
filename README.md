@@ -22,6 +22,8 @@ Type-safe, normalized filter model and utilities for building dynamic queries wi
 - [Installation](#installation)
 - [Compatibility](#compatibility)
 - [Quick start](#quick-start)
+- [DSL builder for FilterRequest](#dsl-builder-for-filterrequest)
+- [JSON serialization](#json-serialization)
 - [Field naming in filters](#field-naming-in-filters)
 - [Filtering by related entities (references)](#filtering-by-related-entities-references)
 - [Validation and errors](#validation-and-errors)
@@ -38,13 +40,13 @@ Type-safe, normalized filter model and utilities for building dynamic queries wi
 
 ## Installation
 
-Prerequisites: Kotlin 2.2.21, repository `mavenCentral()`.
+Prerequisites: Kotlin 2.3.0, repository `mavenCentral()`.
 
 ```kotlin
 dependencies {
-    implementation("ua.wwind.exposed-filters:exposed-filters-core:1.2.3")
-    implementation("ua.wwind.exposed-filters:exposed-filters-jdbc:1.2.3")
-    implementation("ua.wwind.exposed-filters:exposed-filters-rest:1.2.3")
+  implementation("ua.wwind.exposed-filters:exposed-filters-core:1.3.0")
+  implementation("ua.wwind.exposed-filters:exposed-filters-jdbc:1.3.0")
+  implementation("ua.wwind.exposed-filters:exposed-filters-rest:1.3.0")
 }
 ```
 
@@ -52,6 +54,7 @@ dependencies {
 
 | Library version | Kotlin | Ktor  | Exposed      |
 |-----------------|--------|-------|--------------|
+| 1.3.0           | 2.3.0  | 3.3.2 | 1.0.0-rc-4   |
 | 1.2.1           | 2.2.21 | 3.3.2 | 1.0.0-rc-4   |
 | 1.2.0           | 2.2.20 | 3.3.1 | 1.0.0-rc-2   |
 | 1.0.7           | 2.2.20 | 3.3.0 | 1.0.0-rc-1   |
@@ -92,6 +95,176 @@ routing {
     }
 }
 ```
+
+## DSL builder for FilterRequest
+
+Build `FilterRequest` objects programmatically using a type-safe Kotlin DSL. Useful for constructing filters in tests,
+backend services, or when you need to modify filters before applying them.
+
+### Basic usage
+
+```kotlin
+val filter = filterRequest {
+  eq("status", "ACTIVE")
+  gte("age", 18)
+  contains("name", "John")
+}
+```
+
+### Infix syntax
+
+Use infix functions for a more readable syntax:
+
+```kotlin
+val filter = filterRequest {
+  "status" eq "ACTIVE"
+  "age" gte 18
+  "name" contains "John"
+  "role" inList listOf("ADMIN", "USER")
+  "score" between 0..100
+}
+```
+
+### Nested combinators
+
+Create complex filter trees with `and`, `or`, and `not` blocks:
+
+```kotlin
+val filter = filterRequest {
+  "active" eq true
+  or {
+    "role" eq "ADMIN"
+    "role" eq "MODERATOR"
+  }
+  not {
+    "status" eq "DELETED"
+  }
+}
+```
+
+### All supported operators
+
+```kotlin
+val filter = filterRequest {
+  // Equality
+  eq("field", value)
+  neq("field", value)
+
+  // String operators
+  contains("name", "substring")
+  startsWith("name", "prefix")
+  endsWith("name", "suffix")
+
+  // Comparison
+  gt("age", 18)
+  gte("age", 18)
+  lt("age", 65)
+  lte("age", 65)
+
+  // Collections
+  inList("status", listOf("A", "B", "C"))
+  notInList("status", listOf("DELETED", "ARCHIVED"))
+
+  // Range
+  between("age", 18, 65)
+  "score" between (0 to 100)  // Pair syntax
+  "year" between 2020..2024   // ClosedRange syntax
+
+  // Nullability
+  isNull("deletedAt")
+  isNotNull("email")
+  // Or extension syntax:
+  "deletedAt".isNull()
+  "email".isNotNull()
+}
+```
+
+### Nullable-aware operators
+
+These operators remove the predicate when the value is null:
+
+```kotlin
+val filter = filterRequest {
+  eqOrRemove("status", statusParam)       // adds EQ if not null, removes if null
+  gteOrRemove("minAge", minAgeParam)
+  inListOrRemove("tags", tagsParam)
+  betweenOrRemove("date", fromDate, toDate)
+}
+```
+
+Special case: add EQ or IS_NULL based on value:
+
+```kotlin
+val filter = filterRequest {
+  eqOrIsNull("parentId", parentIdParam)  // EQ if not null, IS_NULL if null
+}
+```
+
+### Modifying existing filters
+
+Convert an existing `FilterRequest` to a builder for modification:
+
+```kotlin
+val existingFilter: FilterRequest = call.receiveFilterRequestOrNull() ?: return
+
+val modifiedFilter = existingFilter.toBuilder().apply {
+  // Add a predicate if not already present
+  eqIfAbsent("tenantId", currentTenantId)
+
+  // Replace all predicates for a field
+  replace("status", FilterOperator.IN, listOf("ACTIVE", "PENDING"))
+
+  // Remove predicates for a field
+  remove("internalField")
+}.build()
+```
+
+## JSON serialization
+
+Serialize `FilterRequest` objects to JSON for caching, logging, or sending to other services.
+
+### Serialize to JSON
+
+```kotlin
+val filter = filterRequest {
+  "status" eq "ACTIVE"
+  "age" gte 18
+  or {
+    "role" eq "ADMIN"
+    "role" eq "MODERATOR"
+  }
+}
+
+val json = filter?.toJsonString()
+// Produces JSON compatible with parseFilterRequestOrNull()
+```
+
+### Round-trip serialization
+
+The serialized JSON can be parsed back using the existing `parseFilterRequestOrNull()` function:
+
+```kotlin
+val original = filterRequest {
+  "status" eq "ACTIVE"
+  "department" inList listOf("IT", "HR")
+}
+
+// Serialize
+val json = original?.toJsonString()
+
+// Parse back (e.g., from cache or another service)
+val restored = parseFilterRequestOrNull(json!!)
+
+// Use restored filter
+Users.selectAll().applyFiltersOn(Users, restored)
+```
+
+### Use cases
+
+- **Caching filters**: Store frequently used filters in Redis or other caches
+- **Audit logging**: Log filter requests in a readable JSON format
+- **Service communication**: Send filters between microservices
+- **Testing**: Assert filter structure in unit tests
 
 ## Field naming in filters
 

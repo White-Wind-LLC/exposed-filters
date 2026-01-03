@@ -2,6 +2,26 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.3.0] - 2026-01-03
+
+- Core: add DSL builder for constructing `FilterRequest` programmatically
+    - New `filterRequest { ... }` entry point with fluent API
+    - Supports all filter operators: `eq`, `neq`, `contains`, `startsWith`, `endsWith`, `gt`, `gte`, `lt`, `lte`,
+      `inList`, `notInList`, `between`, `isNull`, `isNotNull`
+    - Infix syntax support: `"field" eq value`, `"field" gte 18`, `"field" between 1..100`
+    - Nested combinators via `and { }`, `or { }`, `not { }` blocks
+    - Predicate management: `add`, `replace`, `remove`, `addIfAbsent`
+    - Nullable-aware operators: `eqOrRemove`, `gteOrRemove`, etc.
+    - Convert existing `FilterRequest` to builder via `toBuilder()`
+- Core: add JSON serialization for `FilterRequest`
+    - New `FilterRequest.toJsonString()` method produces JSON compatible with `parseFilterRequestOrNull()`
+    - Full round-trip serialization support: builder -> JSON -> parser -> FilterRequest
+    - `FilterOperator` and `FilterCombinator` enums are now `@Serializable`
+- REST: fix OR/NOT combinator handling for flat filter structures
+    - Predicates in OR/NOT groups are now correctly wrapped as individual leaves, ensuring the combinator applies to
+      each predicate
+- Dependencies: bump Kotlin to `2.3.0`
+
 ## [1.2.3] - 2025-12-26
  
 - fix: handle NOT_IN operator values properly in filter extraction
