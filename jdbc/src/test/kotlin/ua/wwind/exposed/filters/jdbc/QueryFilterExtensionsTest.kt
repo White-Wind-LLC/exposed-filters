@@ -1,4 +1,4 @@
-@file:OptIn(kotlin.time.ExperimentalTime::class)
+@file:OptIn(ExperimentalTime::class, ExperimentalUuidApi::class)
 
 package ua.wwind.exposed.filters.jdbc
 
@@ -6,8 +6,7 @@ import kotlinx.datetime.LocalDate
 import org.jetbrains.exposed.v1.core.Column
 import org.jetbrains.exposed.v1.core.ColumnType
 import org.jetbrains.exposed.v1.core.Table
-import org.jetbrains.exposed.v1.core.UUIDColumnType
-
+import org.jetbrains.exposed.v1.core.java.UUIDColumnType
 import org.jetbrains.exposed.v1.datetime.date
 import org.jetbrains.exposed.v1.datetime.timestamp
 import org.jetbrains.exposed.v1.jdbc.Database
@@ -28,8 +27,11 @@ import ua.wwind.exposed.filters.core.FilterGroup
 import ua.wwind.exposed.filters.core.FilterLeaf
 import ua.wwind.exposed.filters.core.FilterOperator
 import ua.wwind.exposed.filters.core.FilterRequest
-import java.util.UUID
+import java.util.*
+import kotlin.time.ExperimentalTime
 import kotlin.time.Instant
+import kotlin.uuid.ExperimentalUuidApi
+import kotlin.uuid.Uuid
 
 // Test tables
 
@@ -44,7 +46,7 @@ object TestUsersTable : Table("test_users") {
 }
 
 object TestProductsTable : Table("test_products") {
-    val id: Column<UUID> = uuid("id")
+    val id: Column<Uuid> = uuid("id")
     val title: Column<String> = varchar("title", 120)
     val price: Column<Long> = long("price")
     val category: Column<String> = varchar("category", 50)
@@ -804,9 +806,9 @@ class QueryFilterExtensionsTest {
     @Nested
     inner class UUIDColumnTests {
 
-        private val uuid1 = UUID.fromString("550e8400-e29b-41d4-a716-446655440001")
-        private val uuid2 = UUID.fromString("550e8400-e29b-41d4-a716-446655440002")
-        private val uuid3 = UUID.fromString("550e8400-e29b-41d4-a716-446655440003")
+        private val uuid1 = Uuid.parse("550e8400-e29b-41d4-a716-446655440001")
+        private val uuid2 = Uuid.parse("550e8400-e29b-41d4-a716-446655440002")
+        private val uuid3 = Uuid.parse("550e8400-e29b-41d4-a716-446655440003")
 
         @BeforeEach
         fun setUpData() {
@@ -1288,8 +1290,8 @@ class QueryFilterExtensionsTest {
                 }
                 // Insert products
                 listOf(
-                    Triple(UUID.randomUUID(), "Product A", 100L),
-                    Triple(UUID.randomUUID(), "Product B", 200L)
+                    Triple(Uuid.random(), "Product A", 100L),
+                    Triple(Uuid.random(), "Product B", 200L)
                 ).forEach { (id, title, price) ->
                     TestProductsTable.insert {
                         it[TestProductsTable.id] = id

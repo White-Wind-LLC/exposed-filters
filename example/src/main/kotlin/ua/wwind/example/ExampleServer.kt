@@ -1,15 +1,12 @@
-@file:OptIn(kotlin.time.ExperimentalTime::class)
+@file:OptIn(ExperimentalTime::class, ExperimentalUuidApi::class)
 package ua.wwind.example
 
-import io.ktor.serialization.kotlinx.json.json
-import io.ktor.server.application.Application
-import io.ktor.server.application.install
-import io.ktor.server.plugins.contentnegotiation.ContentNegotiation
-import io.ktor.server.plugins.statuspages.StatusPages
-import io.ktor.server.response.respond
-import io.ktor.server.routing.get
-import io.ktor.server.routing.post
-import io.ktor.server.routing.routing
+import io.ktor.serialization.kotlinx.json.*
+import io.ktor.server.application.*
+import io.ktor.server.plugins.contentnegotiation.*
+import io.ktor.server.plugins.statuspages.*
+import io.ktor.server.response.*
+import io.ktor.server.routing.*
 import kotlinx.datetime.DatePeriod
 import kotlinx.datetime.LocalDate
 import kotlinx.datetime.plus
@@ -34,8 +31,10 @@ import ua.wwind.example.type.WarehouseIdColumnType
 import ua.wwind.exposed.filters.jdbc.applyFiltersOn
 import ua.wwind.exposed.filters.jdbc.columnMappers
 import ua.wwind.exposed.filters.rest.receiveFilterRequestOrNull
-import java.util.UUID
+import kotlin.time.ExperimentalTime
 import kotlin.time.Instant
+import kotlin.uuid.ExperimentalUuidApi
+import kotlin.uuid.Uuid
 
 fun Application.module() {
     // DB init (in-memory H2)
@@ -71,8 +70,8 @@ fun Application.module() {
 
         // Seed Warehouses and Products
         if (WarehouseTable.selectAll().empty()) {
-            val wh1 = UUID.fromString("389d58bf-1f05-4b62-b7e5-c6feedf9da30")
-            val wh2 = UUID.fromString("33d23a36-5dab-4d50-9a4e-6ebd9383680b")
+            val wh1 = Uuid.parse("389d58bf-1f05-4b62-b7e5-c6feedf9da30")
+            val wh2 = Uuid.parse("33d23a36-5dab-4d50-9a4e-6ebd9383680b")
             WarehouseTable.insert { st ->
                 st[WarehouseTable.id] = WarehouseId(wh1)
                 st[WarehouseTable.name] = "Central"
@@ -142,8 +141,8 @@ fun Application.module() {
     val idMappers = columnMappers {
         mapper { columnType, raw ->
             when (columnType) {
-                is ProductIdColumnType -> ProductId(UUID.fromString(raw))
-                is WarehouseIdColumnType -> WarehouseId(UUID.fromString(raw))
+                is ProductIdColumnType -> ProductId(Uuid.parse(raw))
+                is WarehouseIdColumnType -> WarehouseId(Uuid.parse(raw))
                 else -> null
             }
         }

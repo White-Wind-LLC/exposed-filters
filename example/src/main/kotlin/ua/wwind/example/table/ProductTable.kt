@@ -1,3 +1,5 @@
+@file:OptIn(ExperimentalUuidApi::class)
+
 package ua.wwind.example.table
 
 import org.jetbrains.exposed.v1.core.Column
@@ -6,10 +8,11 @@ import ua.wwind.example.type.ProductId
 import ua.wwind.example.type.WarehouseId
 import ua.wwind.example.type.productId
 import ua.wwind.example.type.warehouseId
-import java.util.UUID
+import kotlin.uuid.ExperimentalUuidApi
+import kotlin.uuid.Uuid
 
 object ProductTable : Table("products") {
-    val id: Column<ProductId> = productId("id").clientDefault { ProductId(UUID.randomUUID()) }
+    val id: Column<ProductId> = productId("id").clientDefault { ProductId(Uuid.random()) }
     // Property name is camelCase, DB column is snake_case
     val warehouseId: Column<WarehouseId> = warehouseId("warehouse_id").references(WarehouseTable.id)
     val title: Column<String> = varchar("title", 120)

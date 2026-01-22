@@ -1,20 +1,25 @@
+@file:OptIn(ExperimentalUuidApi::class)
+
 package ua.wwind.example.type
 
 import org.jetbrains.exposed.v1.core.Column
 import org.jetbrains.exposed.v1.core.ColumnType
 import org.jetbrains.exposed.v1.core.Table
-import org.jetbrains.exposed.v1.core.UUIDColumnType
-import java.util.UUID
+import org.jetbrains.exposed.v1.core.UuidColumnType
+import java.util.*
+import kotlin.uuid.ExperimentalUuidApi
+import kotlin.uuid.Uuid
+import kotlin.uuid.toKotlinUuid
 
 @JvmInline
-value class WarehouseId(val value: UUID)
+value class WarehouseId(val value: Uuid)
 
 /**
  * Custom Exposed column type for [WarehouseId].
  * Stores values as SQL UUID and converts to/from [WarehouseId].
  */
 object WarehouseIdColumnType : ColumnType<WarehouseId>() {
-    private val delegate = UUIDColumnType()
+    private val delegate = UuidColumnType()
 
     override fun sqlType(): String = delegate.sqlType()
 
@@ -24,8 +29,9 @@ object WarehouseIdColumnType : ColumnType<WarehouseId>() {
 
     override fun valueFromDB(value: Any): WarehouseId = when (value) {
         is WarehouseId -> value
-        is UUID -> WarehouseId(value)
-        is String -> WarehouseId(UUID.fromString(value))
+        is Uuid -> WarehouseId(value)
+        is UUID -> WarehouseId(value.toKotlinUuid())
+        is String -> WarehouseId(Uuid.parse(value))
         else -> error("Cannot convert ${value::class.simpleName} to WarehouseId")
     }
 }

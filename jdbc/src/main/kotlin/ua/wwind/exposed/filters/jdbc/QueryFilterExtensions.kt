@@ -16,7 +16,7 @@ import org.jetbrains.exposed.v1.core.Op
 import org.jetbrains.exposed.v1.core.ShortColumnType
 import org.jetbrains.exposed.v1.core.Table
 import org.jetbrains.exposed.v1.core.TextColumnType
-import org.jetbrains.exposed.v1.core.UUIDColumnType
+import org.jetbrains.exposed.v1.core.UuidColumnType
 import org.jetbrains.exposed.v1.core.VarCharColumnType
 import org.jetbrains.exposed.v1.core.and
 import org.jetbrains.exposed.v1.core.between
@@ -28,6 +28,7 @@ import org.jetbrains.exposed.v1.core.greaterEq
 import org.jetbrains.exposed.v1.core.inList
 import org.jetbrains.exposed.v1.core.isNotNull
 import org.jetbrains.exposed.v1.core.isNull
+import org.jetbrains.exposed.v1.core.java.UUIDColumnType
 import org.jetbrains.exposed.v1.core.less
 import org.jetbrains.exposed.v1.core.lessEq
 import org.jetbrains.exposed.v1.core.like
@@ -47,11 +48,13 @@ import java.time.LocalDate
 import java.time.LocalDateTime
 import java.time.ZoneOffset
 import java.time.format.DateTimeParseException
-import java.util.UUID
+import java.util.*
 import kotlin.reflect.KProperty1
 import kotlin.reflect.full.memberProperties
 import kotlin.reflect.jvm.isAccessible
 import kotlin.time.Instant
+import kotlin.uuid.ExperimentalUuidApi
+import kotlin.uuid.Uuid
 import java.sql.Date as SqlDate
 import java.sql.Timestamp as SqlTimestamp
 
@@ -301,6 +304,7 @@ private fun predicateFor(
     }
 }
 
+@OptIn(ExperimentalUuidApi::class)
 context(mappersModule: ColumnMappersModule?)
 private fun eqValue(
     expr: ExpressionWithColumnType<*>,
@@ -342,6 +346,7 @@ private fun eqValue(
         is DoubleColumnType -> (expr as ExpressionWithColumnType<Double>).eq(raw.toDouble())
         is VarCharColumnType, is TextColumnType -> (expr as ExpressionWithColumnType<String>).eq(raw)
         is UUIDColumnType -> (expr as ExpressionWithColumnType<UUID>).eq(UUID.fromString(raw))
+        is UuidColumnType -> (expr as ExpressionWithColumnType<Uuid>).eq(Uuid.parse(raw))
         is BooleanColumnType -> (expr as ExpressionWithColumnType<Boolean>).eq(raw.toBooleanStrict())
         is EnumerationNameColumnType<*> -> {
             val enumValue = enumValueOf(expr, raw)
@@ -362,6 +367,7 @@ private fun likeString(
     else -> error("LIKE is only supported for string fields: '$fieldName'")
 }
 
+@OptIn(ExperimentalUuidApi::class)
 context(mappersModule: ColumnMappersModule?)
 private fun inListValue(
     expr: ExpressionWithColumnType<*>,
@@ -404,6 +410,7 @@ private fun inListValue(
         is DoubleColumnType -> (expr as ExpressionWithColumnType<Double>).inList(raws.map(String::toDouble))
         is VarCharColumnType, is TextColumnType -> (expr as ExpressionWithColumnType<String>).inList(raws)
         is UUIDColumnType -> (expr as ExpressionWithColumnType<UUID>).inList(raws.map(UUID::fromString))
+        is UuidColumnType -> (expr as ExpressionWithColumnType<Uuid>).inList(raws.map(Uuid::parse))
         is BooleanColumnType -> (expr as ExpressionWithColumnType<Boolean>).inList(raws.map(String::toBooleanStrict))
         is EnumerationNameColumnType<*> -> {
             @Suppress("UNCHECKED_CAST")
@@ -468,6 +475,7 @@ private fun betweenValues(
     }
 }
 
+@OptIn(ExperimentalUuidApi::class)
 context(mappersModule: ColumnMappersModule?)
 private fun compareGreater(
     expr: ExpressionWithColumnType<*>,
@@ -504,10 +512,12 @@ private fun compareGreater(
         is DoubleColumnType -> (expr as ExpressionWithColumnType<Double>).greater(raw.toDouble())
         is VarCharColumnType, is TextColumnType -> (expr as ExpressionWithColumnType<String>).greater(raw)
         is UUIDColumnType -> (expr as ExpressionWithColumnType<UUID>).greater(UUID.fromString(raw))
+        is UuidColumnType -> (expr as ExpressionWithColumnType<Uuid>).greater(Uuid.parse(raw))
         else -> error("Unsupported comparison for field '$fieldName'")
     }
 }
 
+@OptIn(ExperimentalUuidApi::class)
 context(mappersModule: ColumnMappersModule?)
 private fun compareGreaterEq(
     expr: ExpressionWithColumnType<*>,
@@ -544,10 +554,12 @@ private fun compareGreaterEq(
         is DoubleColumnType -> (expr as ExpressionWithColumnType<Double>).greaterEq(raw.toDouble())
         is VarCharColumnType, is TextColumnType -> (expr as ExpressionWithColumnType<String>).greaterEq(raw)
         is UUIDColumnType -> (expr as ExpressionWithColumnType<UUID>).greaterEq(UUID.fromString(raw))
+        is UuidColumnType -> (expr as ExpressionWithColumnType<Uuid>).greaterEq(Uuid.parse(raw))
         else -> error("Unsupported comparison for field '$fieldName'")
     }
 }
 
+@OptIn(ExperimentalUuidApi::class)
 context(mappersModule: ColumnMappersModule?)
 private fun compareLess(
     expr: ExpressionWithColumnType<*>,
@@ -584,10 +596,12 @@ private fun compareLess(
         is DoubleColumnType -> (expr as ExpressionWithColumnType<Double>).less(raw.toDouble())
         is VarCharColumnType, is TextColumnType -> (expr as ExpressionWithColumnType<String>).less(raw)
         is UUIDColumnType -> (expr as ExpressionWithColumnType<UUID>).less(UUID.fromString(raw))
+        is UuidColumnType -> (expr as ExpressionWithColumnType<Uuid>).less(Uuid.parse(raw))
         else -> error("Unsupported comparison for field '$fieldName'")
     }
 }
 
+@OptIn(ExperimentalUuidApi::class)
 context(mappersModule: ColumnMappersModule?)
 private fun compareLessEq(
     expr: ExpressionWithColumnType<*>,
@@ -624,6 +638,7 @@ private fun compareLessEq(
         is DoubleColumnType -> (expr as ExpressionWithColumnType<Double>).lessEq(raw.toDouble())
         is VarCharColumnType, is TextColumnType -> (expr as ExpressionWithColumnType<String>).lessEq(raw)
         is UUIDColumnType -> (expr as ExpressionWithColumnType<UUID>).lessEq(UUID.fromString(raw))
+        is UuidColumnType -> (expr as ExpressionWithColumnType<Uuid>).lessEq(Uuid.parse(raw))
         else -> error("Unsupported comparison for field '$fieldName'")
     }
 }
@@ -637,6 +652,7 @@ private fun enumValueOf(expr: ExpressionWithColumnType<*>, name: String): Enum<*
 
 // --- EntityID helpers (Column-specific) ---
 
+@OptIn(ExperimentalUuidApi::class)
 context(mappersModule: ColumnMappersModule?)
 private fun eqEntityIdValue(
     column: Column<EntityID<*>>,
@@ -658,10 +674,12 @@ private fun eqEntityIdValue(
         is ShortColumnType -> (column as Column<EntityID<Short>>).eq(raw.toShort())
         is VarCharColumnType -> (column as Column<EntityID<String>>).eq(raw)
         is UUIDColumnType -> (column as Column<EntityID<UUID>>).eq(UUID.fromString(raw))
+        is UuidColumnType -> (column as Column<EntityID<Uuid>>).eq(Uuid.parse(raw))
         else -> error("Unsupported equality for field '$fieldName'")
     }
 }
 
+@OptIn(ExperimentalUuidApi::class)
 context(mappersModule: ColumnMappersModule?)
 private fun inListEntityIdValue(
     column: Column<*>,
@@ -685,6 +703,7 @@ private fun inListEntityIdValue(
         is ShortColumnType -> (column as Column<EntityID<Short>>).inList(raws.map(String::toShort))
         is VarCharColumnType -> (column as Column<EntityID<String>>).inList(raws)
         is UUIDColumnType -> (column as Column<EntityID<UUID>>).inList(raws.map(UUID::fromString))
+        is UuidColumnType -> (column as Column<EntityID<Uuid>>).inList(raws.map(Uuid::parse))
         else -> error("Unsupported IN for field '$fieldName'")
     }
 }
