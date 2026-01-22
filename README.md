@@ -44,9 +44,9 @@ Prerequisites: Kotlin 2.3.0, repository `mavenCentral()`.
 
 ```kotlin
 dependencies {
-  implementation("ua.wwind.exposed-filters:exposed-filters-core:1.3.0")
-  implementation("ua.wwind.exposed-filters:exposed-filters-jdbc:1.3.0")
-  implementation("ua.wwind.exposed-filters:exposed-filters-rest:1.3.0")
+  implementation("ua.wwind.exposed-filters:exposed-filters-core:1.4.0")
+  implementation("ua.wwind.exposed-filters:exposed-filters-jdbc:1.4.0")
+  implementation("ua.wwind.exposed-filters:exposed-filters-rest:1.4.0")
 }
 ```
 
@@ -54,6 +54,7 @@ dependencies {
 
 | Library version | Kotlin | Ktor  | Exposed      |
 |-----------------|--------|-------|--------------|
+| 1.4.0           | 2.3.0  | 3.3.3 | 1.0.0        |
 | 1.3.0           | 2.3.0  | 3.3.2 | 1.0.0-rc-4   |
 | 1.2.1           | 2.2.21 | 3.3.2 | 1.0.0-rc-4   |
 | 1.2.0           | 2.2.20 | 3.3.1 | 1.0.0-rc-2   |

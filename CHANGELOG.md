@@ -2,6 +2,20 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.4.0] - 2026-01-22
+
+- JDBC: add support for Kotlin UUID (`kotlin.uuid.Uuid`)
+    - The library now supports both `java.util.UUID` (via `UUIDColumnType`) and `kotlin.uuid.Uuid` (via
+      `UuidColumnType`) for maximum compatibility
+    - All filter operators work seamlessly with Kotlin UUID: `EQ`, `NEQ`, `IN`, `NOT_IN`, `BETWEEN`, `GT`, `GTE`, `LT`,
+      `LTE`, `IS_NULL`, `IS_NOT_NULL`
+    - EntityID columns backed by Kotlin UUID (`EntityID<Uuid>`) are fully supported
+    - Example: filtering by `warehouseId` now works with both Java and Kotlin UUID implementations
+- Dependencies: upgrade to stable Exposed 1.0.0
+    - Exposed: `1.0.0-rc-4` → `1.0.0` (stable release)
+    - kotlinx-serialization: upgraded to `1.10.0`
+    - Ktor: upgraded to `3.3.3`
+
 ## [1.3.0] - 2026-01-03
 
 - Core: add DSL builder for constructing `FilterRequest` programmatically
