@@ -26,6 +26,7 @@ Type-safe, normalized filter model and utilities for building dynamic queries wi
 - [JSON serialization](#json-serialization)
 - [Field naming in filters](#field-naming-in-filters)
 - [Filtering by related entities (references)](#filtering-by-related-entities-references)
+- [Filtering by JSON/JSONB fields](#filtering-by-jsonjsonb-fields)
 - [Validation and errors](#validation-and-errors)
 - [JSON request format](#json-request-format)
 - [Supported operators](#supported-operators)
@@ -44,9 +45,9 @@ Prerequisites: Kotlin 2.3.20, repository `mavenCentral()`.
 
 ```kotlin
 dependencies {
-  implementation("ua.wwind.exposed-filters:exposed-filters-core:1.5.0")
-  implementation("ua.wwind.exposed-filters:exposed-filters-jdbc:1.5.0")
-  implementation("ua.wwind.exposed-filters:exposed-filters-rest:1.5.0")
+  implementation("ua.wwind.exposed-filters:exposed-filters-core:1.6.0")
+  implementation("ua.wwind.exposed-filters:exposed-filters-jdbc:1.6.0")
+  implementation("ua.wwind.exposed-filters:exposed-filters-rest:1.6.0")
 }
 ```
 
@@ -323,6 +324,95 @@ Constraints:
 - Path nesting for references is limited to one level (e.g., `warehouseId.name`). Multi-hop like `a.b.c` is not
   supported.
 
+## Filtering by JSON/JSONB fields
+
+You can filter columns containing JSON or JSONB data using dot-path notation to access nested values within the JSON
+structure. The library uses Exposed's `extract()` with JSONPath to navigate into JSON objects.
+
+Example: filter orders by customer city stored in a JSONB column
+
+```kotlin
+object Orders : Table("orders") {
+  val id: Column<Int> = integer("id").autoIncrement()
+  val payload: Column<String> = jsonb("payload", Json::class) // JSONB column
+}
+```
+
+Filter by nested JSON field:
+
+```json
+{
+  "filters": {
+    "payload.customer.address.city": [
+      {
+        "op": "EQ",
+        "value": "Kyiv"
+      }
+    ]
+  }
+}
+```
+
+### Supported operators
+
+All standard operators work with JSON fields:
+
+- **Equality**: `EQ`, `NEQ`
+- **String search**: `CONTAINS`, `STARTS_WITH`, `ENDS_WITH`
+- **Sets**: `IN`, `NOT_IN`
+- **Ranges and comparisons**: `BETWEEN`, `GT`, `GTE`, `LT`, `LTE`
+- **Nullability**: `IS_NULL`, `IS_NOT_NULL`
+
+### Type inference
+
+The library automatically infers the JSON value type based on the raw string:
+
+- **Numbers**: values like `123`, `45.67` are treated as `Double`
+- **Booleans**: `true` or `false` (parsed with `toBooleanStrict()`)
+- **Dates**: `YYYY-MM-DD` format → SQL `DATE`
+- **Timestamps**: `YYYY-MM-DDTHH:MM` or `YYYY-MM-DDTHH:MM:SS` → SQL `TIMESTAMP`
+- **Strings**: any other value
+
+Example with multiple operators:
+
+```json
+{
+  "filters": {
+    "payload.status": [
+      {
+        "op": "EQ",
+        "value": "active"
+      }
+    ],
+    "payload.amount": [
+      {
+        "op": "GT",
+        "value": "100"
+      }
+    ],
+    "payload.tags": [
+      {
+        "op": "CONTAINS",
+        "value": "vip"
+      }
+    ],
+    "payload.createdAt": [
+      {
+        "op": "GTE",
+        "value": "2024-01-01T00:00:00"
+      }
+    ]
+  }
+}
+```
+
+Constraints:
+
+- JSON path filtering only works on columns marked with `JsonColumnMarker` (JSON/JSONB columns in Exposed)
+- `CONTAINS`, `STARTS_WITH`, `ENDS_WITH` only work with string JSON values
+- `BETWEEN` is not supported for boolean JSON values
+- Comparison operators (`GT`, `GTE`, `LT`, `LTE`) are not supported for boolean JSON values
+
 ## Validation and errors
 
 - Requests that reference unknown fields will fail fast with a clear error message, e.g. `Unknown filter field: foo`.
@@ -431,7 +521,7 @@ Notes:
 
 - Equality: `EQ`, `NEQ`
 - String search: `CONTAINS`, `STARTS_WITH`, `ENDS_WITH`
-- Sets: `IN`, `NOT_IN` (including array fields)
+- Sets: `IN`, `NOT_IN` (including array and JSON fields)
 - Ranges and comparisons: `BETWEEN`, `GT`, `GTE`, `LT`, `LTE`
 - Nullability: `IS_NULL`, `IS_NOT_NULL`
 

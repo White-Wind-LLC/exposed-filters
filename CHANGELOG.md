@@ -2,6 +2,16 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.6.0] - 2026-03-17
+
+- JDBC: add JSON/JSONB path filtering support
+    - Filter JSON/JSONB columns using dot-path notation (e.g., `payload.address.city`)
+    - Uses Exposed's `extract()` with JSONPath for scalar extraction
+    - Supports all operators: `EQ`, `NEQ`, `IN`, `NOT_IN`, `BETWEEN`, `GT`, `GTE`, `LT`, `LTE`, `IS_NULL`,
+      `IS_NOT_NULL`, `CONTAINS`, `STARTS_WITH`, `ENDS_WITH`
+    - Automatic type inference for JSON values: numbers, booleans, dates, timestamps, strings
+    - Custom SQL casting for DATE and TIMESTAMP types in JSON extracted values
+
 ## [1.5.0] - 2026-03-17
 
 - JDBC: add IN/NOT_IN support for array fields
