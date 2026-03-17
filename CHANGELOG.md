@@ -2,6 +2,19 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.5.0] - 2026-03-17
+
+- JDBC: add IN/NOT_IN support for array fields
+    - Filter array columns using `IN` to match rows where the array contains any of the specified values
+    - Use `NOT_IN` to exclude rows where the array contains any of the specified values
+    - Supports arrays of: Int, Long, Short, Double, String, UUID, Boolean, and Enums
+    - Works seamlessly with custom column mappers for custom element types
+- Dependencies: upgrade to newer versions
+    - Exposed: `1.0.0` → `1.1.1`
+    - Ktor: `3.3.3` → `3.4.1`
+    - Kotlin: `2.3.0` → `2.3.20`
+    - maven-publish: `0.34.0` → `0.35.0`
+
 ## [1.4.0] - 2026-01-22
 
 - JDBC: add support for Kotlin UUID (`kotlin.uuid.Uuid`)
