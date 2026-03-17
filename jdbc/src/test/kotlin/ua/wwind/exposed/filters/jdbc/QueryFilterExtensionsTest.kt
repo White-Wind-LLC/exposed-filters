@@ -99,6 +99,13 @@ object TestShortTable : Table("test_short") {
     override val primaryKey = PrimaryKey(code)
 }
 
+object TestArrayTable : Table("test_array") {
+    val id: Column<Int> = integer("id").autoIncrement()
+    val title: Column<String> = varchar("title", 100)
+    val tags = array<String>("tags")
+    override val primaryKey = PrimaryKey(id)
+}
+
 class QueryFilterExtensionsTest {
 
     @BeforeEach
@@ -1263,6 +1270,100 @@ class QueryFilterExtensionsTest {
                 assertEquals(listOf("Second", "Third"), results)
             }
         }
+    }
+
+    // ---------------------------------------------------------
+    // Tests for Array column type
+    // ---------------------------------------------------------
+    @Nested
+    inner class ArrayColumnTests {
+
+        @BeforeEach
+        fun setUpData() {
+            transaction {
+                SchemaUtils.create(TestArrayTable)
+                TestArrayTable.insert {
+                    it[title] = "A"
+                    it[tags] = listOf("orders", "products")
+                }
+                TestArrayTable.insert {
+                    it[title] = "B"
+                    it[tags] = listOf("inventory")
+                }
+                TestArrayTable.insert {
+                    it[title] = "C"
+                    it[tags] = listOf("products", "returns")
+                }
+            }
+        }
+
+        @AfterEach
+        fun cleanUp() {
+            transaction { SchemaUtils.drop(TestArrayTable) }
+        }
+
+        @Test
+        fun `applyFiltersOn with IN operator checks value membership in array column`() {
+            val filter = FilterRequest(
+                FilterLeaf(listOf(FieldFilter("tags", FilterOperator.IN, listOf("orders", "returns"))))
+            )
+
+            transaction {
+                val results = TestArrayTable.selectAll()
+                    .applyFiltersOn(TestArrayTable, filter)
+                    .map { it[TestArrayTable.title] }
+                    .sorted()
+
+                assertEquals(listOf("A", "C"), results)
+            }
+        }
+
+        @Test
+        fun `applyFiltersOn with NOT_IN operator excludes rows containing any provided value`() {
+            val filter = FilterRequest(
+                FilterLeaf(listOf(FieldFilter("tags", FilterOperator.NOT_IN, listOf("products"))))
+            )
+
+            transaction {
+                val results = TestArrayTable.selectAll()
+                    .applyFiltersOn(TestArrayTable, filter)
+                    .map { it[TestArrayTable.title] }
+                    .sorted()
+
+                assertEquals(listOf("B"), results)
+            }
+        }
+
+        @Test
+        fun `applyFiltersOn with IN empty values returns empty result for array column`() {
+            val filter = FilterRequest(
+                FilterLeaf(listOf(FieldFilter("tags", FilterOperator.IN, emptyList())))
+            )
+
+            transaction {
+                val results = TestArrayTable.selectAll()
+                    .applyFiltersOn(TestArrayTable, filter)
+                    .toList()
+
+                assertEquals(0, results.size)
+            }
+        }
+
+        @Test
+        fun `applyFiltersOn with NOT_IN empty values returns all rows for array column`() {
+            val filter = FilterRequest(
+                FilterLeaf(listOf(FieldFilter("tags", FilterOperator.NOT_IN, emptyList())))
+            )
+
+            transaction {
+                val results = TestArrayTable.selectAll()
+                    .applyFiltersOn(TestArrayTable, filter)
+                    .toList()
+
+                assertEquals(3, results.size)
+            }
+        }
+
     }
 
     // ---------------------------------------------------------

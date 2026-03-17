@@ -430,7 +430,7 @@ Notes:
 
 - Equality: `EQ`, `NEQ`
 - String search: `CONTAINS`, `STARTS_WITH`, `ENDS_WITH`
-- Sets: `IN`, `NOT_IN`
+- Sets: `IN`, `NOT_IN` (including array fields)
 - Ranges and comparisons: `BETWEEN`, `GT`, `GTE`, `LT`, `LTE`
 - Nullability: `IS_NULL`, `IS_NOT_NULL`
 
@@ -456,6 +456,7 @@ Operator constraints:
 - `LIKE`-style operators only for string columns.
 - `BETWEEN` requires exactly two values; not supported for UUID/Enum/Boolean.
 - `IN` requires non-empty values; `NOT_IN` with an empty `values` array is treated as a no-op (ignored).
+- `IN` and `NOT_IN` are supported for scalar and array fields.
 - Date/time operators: `EQ`, `IN`, `BETWEEN`, `GT`, `GTE`, `LT`, `LTE`, `IS_NULL`, `IS_NOT_NULL` are supported for date
   and timestamp columns.
 
