@@ -7,15 +7,19 @@ dependencies {
     implementation(project(":core"))
     implementation(libs.exposed.core)
     implementation(libs.exposed.jdbc)
+    implementation(libs.exposed.json)
     implementation(kotlin("reflect"))
 
     testImplementation(platform(libs.junit.bom))
     testImplementation(libs.junit.jupiter)
     testImplementation(libs.h2)
+    testImplementation(libs.postgresql)
     testImplementation(libs.exposed.kotlin.datetime)
     testImplementation(libs.kotlinx.datetime)
     testImplementation(libs.kotlinx.serialization)
     testImplementation(libs.slf4j.simple)
+    testImplementation(libs.testcontainers.junit.jupiter)
+    testImplementation(libs.testcontainers.postgresql)
     testRuntimeOnly("org.junit.platform:junit-platform-launcher")
 }
 
