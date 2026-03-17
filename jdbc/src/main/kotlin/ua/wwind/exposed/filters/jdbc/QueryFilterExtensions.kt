@@ -2,6 +2,7 @@
 
 package ua.wwind.exposed.filters.jdbc
 
+import org.jetbrains.exposed.v1.core.ArrayColumnType
 import org.jetbrains.exposed.v1.core.BooleanColumnType
 import org.jetbrains.exposed.v1.core.Column
 import org.jetbrains.exposed.v1.core.ColumnSet
@@ -11,6 +12,7 @@ import org.jetbrains.exposed.v1.core.EnumerationNameColumnType
 import org.jetbrains.exposed.v1.core.ExpressionWithColumnType
 import org.jetbrains.exposed.v1.core.IColumnType
 import org.jetbrains.exposed.v1.core.IntegerColumnType
+import org.jetbrains.exposed.v1.core.LiteralOp
 import org.jetbrains.exposed.v1.core.LongColumnType
 import org.jetbrains.exposed.v1.core.Op
 import org.jetbrains.exposed.v1.core.ShortColumnType
@@ -19,6 +21,7 @@ import org.jetbrains.exposed.v1.core.TextColumnType
 import org.jetbrains.exposed.v1.core.UuidColumnType
 import org.jetbrains.exposed.v1.core.VarCharColumnType
 import org.jetbrains.exposed.v1.core.and
+import org.jetbrains.exposed.v1.core.anyFrom
 import org.jetbrains.exposed.v1.core.between
 import org.jetbrains.exposed.v1.core.dao.id.EntityID
 import org.jetbrains.exposed.v1.core.eq
@@ -285,6 +288,9 @@ private fun predicateFor(
     if (filter.operator == FilterOperator.NOT_IN && filter.values.isEmpty()) {
         return Op.TRUE
     }
+    if (expr.columnType is ArrayColumnType<*, *>) {
+        return arrayPredicateFor(expr, filter, fieldName)
+    }
 
     return when (filter.operator) {
         FilterOperator.EQ -> eqValue(expr, filter.values.firstOrNull(), fieldName)
@@ -301,6 +307,59 @@ private fun predicateFor(
         FilterOperator.LTE -> compareLessEq(expr, filter.values.firstOrNull(), fieldName)
         FilterOperator.IS_NULL -> expr.isNull()
         FilterOperator.IS_NOT_NULL -> expr.isNotNull()
+    }
+}
+
+@OptIn(ExperimentalUuidApi::class)
+context(mappersModule: ColumnMappersModule?)
+private fun arrayPredicateFor(
+    expr: ExpressionWithColumnType<*>,
+    filter: FieldFilter,
+    fieldName: String,
+): Op<Boolean> {
+    val arrayColumnType = expr.columnType as ArrayColumnType<*, *>
+    val delegate = arrayColumnType.delegate
+
+    @Suppress("UNCHECKED_CAST")
+    val arrayExpr = expr as ExpressionWithColumnType<List<Any>>
+    val containsOps = filter.values.map { raw ->
+        val parsed = parseArrayElementValue(delegate, raw, fieldName)
+        @Suppress("UNCHECKED_CAST")
+        (LiteralOp(delegate as IColumnType<Any>, parsed) eq anyFrom(arrayExpr))
+    }
+    return when (filter.operator) {
+        FilterOperator.IN -> containsOps.reduce { acc, op -> acc.or(op) }
+        FilterOperator.NOT_IN -> not(containsOps.reduce { acc, op -> acc.or(op) })
+        else -> error(
+            "Operator ${filter.operator} is not supported for array field '$fieldName'. " +
+                    "Use IN or NOT_IN."
+        )
+    }
+}
+
+@OptIn(ExperimentalUuidApi::class)
+context(mappersModule: ColumnMappersModule?)
+private fun parseArrayElementValue(
+    delegate: IColumnType<*>,
+    raw: String,
+    fieldName: String,
+): Any {
+    if (mappersModule != null) {
+        @Suppress("UNCHECKED_CAST")
+        val customMapped = mappersModule.tryMap(delegate as IColumnType<Any>, raw)
+        if (customMapped != null) return customMapped
+    }
+    return when (delegate) {
+        is IntegerColumnType -> raw.toInt()
+        is LongColumnType -> raw.toLong()
+        is ShortColumnType -> raw.toShort()
+        is DoubleColumnType -> raw.toDouble()
+        is VarCharColumnType, is TextColumnType -> raw
+        is UUIDColumnType -> UUID.fromString(raw)
+        is UuidColumnType -> Uuid.parse(raw)
+        is BooleanColumnType -> raw.toBooleanStrict()
+        is EnumerationNameColumnType<*> -> enumValueOf(delegate, raw)
+        else -> error("Unsupported array element type for field '$fieldName'")
     }
 }
 
@@ -646,6 +705,11 @@ private fun compareLessEq(
 @Suppress("UNCHECKED_CAST")
 private fun enumValueOf(expr: ExpressionWithColumnType<*>, name: String): Enum<*> {
     val type = expr.columnType as EnumerationNameColumnType<*>
+    return enumValueOf(type, name)
+}
+
+@Suppress("UNCHECKED_CAST")
+private fun enumValueOf(type: EnumerationNameColumnType<*>, name: String): Enum<*> {
     val constants = type.klass.java.enumConstants as Array<out Enum<*>>
     return constants.first { it.name == name }
 }
