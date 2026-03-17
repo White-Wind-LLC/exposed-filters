@@ -10,3 +10,5 @@ local.properties
 .gradle/caches/
 .gradle/kotlin/
 **/.DS_Store
+
+.firebender/plans

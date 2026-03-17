@@ -1,10 +1,16 @@
 package ua.wwind.exposed.filters.rest
 
-import io.ktor.server.application.*
-import io.ktor.server.request.*
+import io.ktor.server.application.ApplicationCall
+import io.ktor.server.request.receiveNullable
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
-import ua.wwind.exposed.filters.core.*
+import ua.wwind.exposed.filters.core.FieldFilter
+import ua.wwind.exposed.filters.core.FilterCombinator
+import ua.wwind.exposed.filters.core.FilterGroup
+import ua.wwind.exposed.filters.core.FilterLeaf
+import ua.wwind.exposed.filters.core.FilterNode
+import ua.wwind.exposed.filters.core.FilterOperator
+import ua.wwind.exposed.filters.core.FilterRequest
 
 @Serializable
 internal data class ConditionDto(
@@ -126,7 +132,7 @@ private fun FilterNodeDto.toNodeOrNull(): FilterNode? {
 private fun buildLeafOrNull(filters: Map<String, List<ConditionDto>>?): FilterLeaf? {
     if (filters == null) return null
     val predicates = filters.flatMap { (field, conditions) ->
-        conditions.mapNotNull { condition ->
+        conditions.map { condition ->
             val values: List<String> = when (condition.op) {
                 FilterOperator.IN,
                 FilterOperator.BETWEEN,

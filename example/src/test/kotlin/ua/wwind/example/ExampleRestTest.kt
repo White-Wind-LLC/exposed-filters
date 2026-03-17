@@ -1,11 +1,16 @@
 package ua.wwind.example
 
-import io.ktor.client.request.*
-import io.ktor.client.statement.*
-import io.ktor.http.*
-import io.ktor.server.testing.*
+import io.ktor.client.request.post
+import io.ktor.client.request.setBody
+import io.ktor.client.statement.HttpResponse
+import io.ktor.client.statement.bodyAsText
+import io.ktor.http.ContentType
+import io.ktor.http.HttpStatusCode
+import io.ktor.http.contentType
+import io.ktor.server.testing.testApplication
 import kotlinx.serialization.json.Json
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import ua.wwind.exposed.filters.core.FilterCombinator
 import ua.wwind.exposed.filters.core.filterRequest
@@ -77,7 +82,7 @@ class ExampleRestTest {
         // Optional sanity check on error structure
         // e.g. { "error": "Unknown filter field: nonExistingField" }
         // We only assert it contains the field name to avoid brittle formatting checks
-        kotlin.test.assertTrue(body.contains("nonExistingField"))
+        assertTrue(body.contains("nonExistingField"))
     }
 
     @Test
