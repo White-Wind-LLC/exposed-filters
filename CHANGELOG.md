@@ -12,6 +12,8 @@ All notable changes to this project will be documented in this file.
     - Automatic type inference for JSON values: numbers, booleans, dates, timestamps, strings
     - Custom SQL casting for DATE and TIMESTAMP types in JSON extracted values
 
+**Full Changelog**: https://github.com/White-Wind-LLC/exposed-filters/compare/v1.5.0...v1.6.0
+
 ## [1.5.0] - 2026-03-17
 
 - JDBC: add IN/NOT_IN support for array fields
