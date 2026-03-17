@@ -334,7 +334,7 @@ Example: filter orders by customer city stored in a JSONB column
 ```kotlin
 object Orders : Table("orders") {
   val id: Column<Int> = integer("id").autoIncrement()
-  val payload: Column<String> = jsonb("payload", Json::class) // JSONB column
+  val payload: Column<Payload> = jsonb("payload", Json.Default) // JSONB column
 }
 ```
 
