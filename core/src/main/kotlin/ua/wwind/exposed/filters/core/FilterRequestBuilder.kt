@@ -1,5 +1,8 @@
 package ua.wwind.exposed.filters.core
 
+@DslMarker
+public annotation class FilterRequestDsl
+
 /**
  * DSL builder for constructing [FilterRequest] with support for arbitrary nesting.
  *
@@ -20,6 +23,7 @@ package ua.wwind.exposed.filters.core
  * ```
  */
 @Suppress("TooManyFunctions")
+@FilterRequestDsl
 public class FilterRequestBuilder internal constructor(
     initialCombinator: FilterCombinator? = null,
     initialPredicates: List<FieldFilter>? = null,

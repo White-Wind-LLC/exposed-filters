@@ -1,6 +1,9 @@
 package ua.wwind.exposed.filters.core
 
-import org.junit.jupiter.api.Assertions.*
+import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertNotNull
+import org.junit.jupiter.api.Assertions.assertNull
+import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 
 class FilterRequestBuilderTest {
@@ -498,6 +501,91 @@ class FilterRequestBuilderTest {
         val root = result!!.root as FilterGroup
         assertEquals(FilterCombinator.AND, root.combinator)
         assertEquals(3, root.children.size)
+    }
+
+    @Test
+    fun `nested or keeps predicates inside its own child context`() {
+        val result = filterRequest {
+            "warehouseId" eq "w1"
+            "status" inList listOf("PLANNED", "IN_PROGRESS")
+            or {
+                "assignedToId".isNull()
+                "assignedToId" eq "u1"
+            }
+        }
+
+        assertNotNull(result)
+        val root = result!!.root as FilterGroup
+        assertEquals(FilterCombinator.AND, root.combinator)
+        assertEquals(2, root.children.size)
+
+        val parentLeaf = root.children[0] as FilterLeaf
+        assertEquals(2, parentLeaf.predicates.size)
+        assertEquals("warehouseId", parentLeaf.predicates[0].field)
+        assertEquals("status", parentLeaf.predicates[1].field)
+
+        val orGroup = root.children[1] as FilterGroup
+        assertEquals(FilterCombinator.OR, orGroup.combinator)
+        assertEquals(1, orGroup.children.size)
+
+        val orLeaf = orGroup.children[0] as FilterLeaf
+        assertEquals(2, orLeaf.predicates.size)
+        assertEquals("assignedToId", orLeaf.predicates[0].field)
+        assertEquals(FilterOperator.IS_NULL, orLeaf.predicates[0].operator)
+        assertEquals("assignedToId", orLeaf.predicates[1].field)
+        assertEquals(FilterOperator.EQ, orLeaf.predicates[1].operator)
+    }
+
+    @Test
+    fun `deep nested blocks keep predicates in expected subtree`() {
+        val result = filterRequest {
+            "tenantId" eq "t1"
+            and {
+                "warehouseId" eq "w1"
+                or {
+                    "status" inList listOf("PLANNED", "IN_PROGRESS")
+                    not {
+                        "archivedAt".isNotNull()
+                    }
+                }
+            }
+        }
+
+        println(result?.toJsonString())
+
+        assertNotNull(result)
+        val root = result!!.root as FilterGroup
+        assertEquals(FilterCombinator.AND, root.combinator)
+        assertEquals(2, root.children.size)
+
+        val rootLeaf = root.children[0] as FilterLeaf
+        assertEquals(1, rootLeaf.predicates.size)
+        assertEquals("tenantId", rootLeaf.predicates[0].field)
+
+        val andGroup = root.children[1] as FilterGroup
+        assertEquals(FilterCombinator.AND, andGroup.combinator)
+        assertEquals(2, andGroup.children.size)
+
+        val andLeaf = andGroup.children[0] as FilterLeaf
+        assertEquals(1, andLeaf.predicates.size)
+        assertEquals("warehouseId", andLeaf.predicates[0].field)
+
+        val orGroup = andGroup.children[1] as FilterGroup
+        assertEquals(FilterCombinator.OR, orGroup.combinator)
+        assertEquals(2, orGroup.children.size)
+
+        val orLeaf = orGroup.children[0] as FilterLeaf
+        assertEquals(1, orLeaf.predicates.size)
+        assertEquals("status", orLeaf.predicates[0].field)
+        assertEquals(FilterOperator.IN, orLeaf.predicates[0].operator)
+
+        val notGroup = orGroup.children[1] as FilterGroup
+        assertEquals(FilterCombinator.NOT, notGroup.combinator)
+        assertEquals(1, notGroup.children.size)
+        val notLeaf = notGroup.children[0] as FilterLeaf
+        assertEquals(1, notLeaf.predicates.size)
+        assertEquals("archivedAt", notLeaf.predicates[0].field)
+        assertEquals(FilterOperator.IS_NOT_NULL, notLeaf.predicates[0].operator)
     }
 
     @Test

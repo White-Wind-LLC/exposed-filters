@@ -2,6 +2,21 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.6.1] - 2026-04-15
+
+- Core: fix DSL context leakage in nested filter builder blocks
+    - Added a Kotlin DSL marker to `FilterRequestBuilder` so nested `and {}`, `or {}`, `not {}`, and `child {}` blocks
+      use their own builder context by default
+    - Prevents predicates declared inside nested blocks from being accidentally attached to the outer `filterRequest {}`
+      node
+    - Added regression tests to validate correct predicate placement in nested filter trees
+- Dependencies: upgrade library versions
+    - Exposed: `1.1.1` → `1.2.0`
+    - Ktor: `3.4.1` → `3.4.2`
+    - kotlinx-serialization: `1.10.0` → `1.11.0`
+
+**Full Changelog**: https://github.com/White-Wind-LLC/exposed-filters/compare/v1.6.0...v1.6.1
+
 ## [1.6.0] - 2026-03-17
 
 - JDBC: add JSON/JSONB path filtering support
