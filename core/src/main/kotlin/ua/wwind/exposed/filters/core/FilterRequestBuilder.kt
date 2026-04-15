@@ -67,10 +67,15 @@ public class FilterRequestBuilder internal constructor(
         if (!hasPredicates && !hasChildren) return null
 
         val leaf = if (hasPredicates) FilterLeaf(predicates.toList()) else null
+        val predicateLeaves = predicates.map { predicate -> FilterLeaf(listOf(predicate)) }
 
         return when {
             hasPredicates && !hasChildren -> {
-                if (comb == FilterCombinator.AND) leaf else FilterGroup(comb, listOfNotNull(leaf))
+                if (comb == FilterCombinator.AND) {
+                    leaf
+                } else {
+                    FilterGroup(comb, predicateLeaves)
+                }
             }
 
             !hasPredicates && hasChildren -> {
@@ -78,7 +83,11 @@ public class FilterRequestBuilder internal constructor(
             }
 
             else -> {
-                FilterGroup(comb, listOfNotNull(leaf) + children)
+                if (comb == FilterCombinator.AND) {
+                    FilterGroup(comb, listOfNotNull(leaf) + children)
+                } else {
+                    FilterGroup(comb, predicateLeaves + children)
+                }
             }
         }
     }

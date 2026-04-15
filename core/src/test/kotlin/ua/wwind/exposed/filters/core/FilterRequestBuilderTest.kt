@@ -463,17 +463,20 @@ class FilterRequestBuilderTest {
         assertNotNull(result)
         val orGroup = result!!.root as FilterGroup
         assertEquals(FilterCombinator.OR, orGroup.combinator)
-        assertEquals(2, orGroup.children.size)
+        assertEquals(3, orGroup.children.size)
 
-        val orLeaf = orGroup.children[0] as FilterLeaf
-        assertEquals(2, orLeaf.predicates.size)
-        assertEquals("type", orLeaf.predicates[0].field)
-        assertEquals("A", orLeaf.predicates[0].values[0])
-        assertEquals("type", orLeaf.predicates[1].field)
-        assertEquals("B", orLeaf.predicates[1].values[0])
+        val firstTypeLeaf = orGroup.children[0] as FilterLeaf
+        assertEquals(1, firstTypeLeaf.predicates.size)
+        assertEquals("type", firstTypeLeaf.predicates[0].field)
+        assertEquals("A", firstTypeLeaf.predicates[0].values[0])
+
+        val secondTypeLeaf = orGroup.children[1] as FilterLeaf
+        assertEquals(1, secondTypeLeaf.predicates.size)
+        assertEquals("type", secondTypeLeaf.predicates[0].field)
+        assertEquals("B", secondTypeLeaf.predicates[0].values[0])
 
         // and block with only predicates simplifies to FilterLeaf
-        val andLeaf = orGroup.children[1] as FilterLeaf
+        val andLeaf = orGroup.children[2] as FilterLeaf
         assertEquals(2, andLeaf.predicates.size)
         assertEquals("status", andLeaf.predicates[0].field)
         assertEquals(FilterOperator.IN, andLeaf.predicates[0].operator)
@@ -526,14 +529,17 @@ class FilterRequestBuilderTest {
 
         val orGroup = root.children[1] as FilterGroup
         assertEquals(FilterCombinator.OR, orGroup.combinator)
-        assertEquals(1, orGroup.children.size)
+        assertEquals(2, orGroup.children.size)
 
-        val orLeaf = orGroup.children[0] as FilterLeaf
-        assertEquals(2, orLeaf.predicates.size)
-        assertEquals("assignedToId", orLeaf.predicates[0].field)
-        assertEquals(FilterOperator.IS_NULL, orLeaf.predicates[0].operator)
-        assertEquals("assignedToId", orLeaf.predicates[1].field)
-        assertEquals(FilterOperator.EQ, orLeaf.predicates[1].operator)
+        val isNullLeaf = orGroup.children[0] as FilterLeaf
+        assertEquals(1, isNullLeaf.predicates.size)
+        assertEquals("assignedToId", isNullLeaf.predicates[0].field)
+        assertEquals(FilterOperator.IS_NULL, isNullLeaf.predicates[0].operator)
+
+        val equalsLeaf = orGroup.children[1] as FilterLeaf
+        assertEquals(1, equalsLeaf.predicates.size)
+        assertEquals("assignedToId", equalsLeaf.predicates[0].field)
+        assertEquals(FilterOperator.EQ, equalsLeaf.predicates[0].operator)
     }
 
     @Test
