@@ -299,6 +299,116 @@ class QueryFilterExtensionsTest {
         }
 
         @Test
+        fun `applyFiltersOn EQ on string column is case-insensitive by default`() {
+            val filter =
+                FilterRequest(
+                    FilterLeaf(listOf(FieldFilter("name", FilterOperator.EQ, listOf("ALICE")))),
+                )
+
+            transaction {
+                val results =
+                    TestUsersTable
+                        .selectAll()
+                        .applyFiltersOn(TestUsersTable, filter)
+                        .map { it[TestUsersTable.name] }
+
+                assertEquals(listOf("Alice"), results)
+            }
+        }
+
+        @Test
+        fun `applyFiltersOn CONTAINS on string column is case-insensitive by default`() {
+            val filter =
+                FilterRequest(
+                    FilterLeaf(listOf(FieldFilter("name", FilterOperator.CONTAINS, listOf("LI")))),
+                )
+
+            transaction {
+                val results =
+                    TestUsersTable
+                        .selectAll()
+                        .applyFiltersOn(TestUsersTable, filter)
+                        .map { it[TestUsersTable.name] }
+
+                assertEquals(2, results.size)
+                assertTrue(results.containsAll(listOf("Alice", "Charlie")))
+            }
+        }
+
+        @Test
+        fun `applyFiltersOn IN on string column is case-insensitive by default`() {
+            val filter =
+                FilterRequest(
+                    FilterLeaf(listOf(FieldFilter("name", FilterOperator.IN, listOf("ALICE", "bob")))),
+                )
+
+            transaction {
+                val results =
+                    TestUsersTable
+                        .selectAll()
+                        .applyFiltersOn(TestUsersTable, filter)
+                        .map { it[TestUsersTable.name] }
+                        .sorted()
+
+                assertEquals(listOf("Alice", "Bob"), results)
+            }
+        }
+
+        @Test
+        fun `applyFiltersOn EQ respects caseSensitiveStrings=true`() {
+            val filter =
+                FilterRequest(
+                    FilterLeaf(listOf(FieldFilter("name", FilterOperator.EQ, listOf("ALICE")))),
+                )
+
+            transaction {
+                val caseSensitive =
+                    TestUsersTable
+                        .selectAll()
+                        .applyFiltersOn(TestUsersTable, filter, FilterOptions(caseSensitiveStrings = true))
+                        .toList()
+                assertTrue(caseSensitive.isEmpty(), "ALICE must not match Alice under case-sensitive mode")
+
+                val exact =
+                    TestUsersTable
+                        .selectAll()
+                        .applyFiltersOn(
+                            TestUsersTable,
+                            FilterRequest(
+                                FilterLeaf(listOf(FieldFilter("name", FilterOperator.EQ, listOf("Alice")))),
+                            ),
+                            FilterOptions(caseSensitiveStrings = true),
+                        )
+                        .map { it[TestUsersTable.name] }
+                assertEquals(listOf("Alice"), exact)
+            }
+        }
+
+        @Test
+        fun `applyFiltersOn STARTS_WITH respects caseSensitiveStrings=true`() {
+            val filter =
+                FilterRequest(
+                    FilterLeaf(listOf(FieldFilter("name", FilterOperator.STARTS_WITH, listOf("a")))),
+                )
+
+            transaction {
+                val caseSensitive =
+                    TestUsersTable
+                        .selectAll()
+                        .applyFiltersOn(TestUsersTable, filter, FilterOptions(caseSensitiveStrings = true))
+                        .toList()
+                assertTrue(caseSensitive.isEmpty(), "lowercase 'a' must not start-match 'Alice' under case-sensitive mode")
+
+                val caseInsensitive =
+                    TestUsersTable
+                        .selectAll()
+                        .applyFiltersOn(TestUsersTable, filter)
+                        .map { it[TestUsersTable.name] }
+                assertEquals(listOf("Alice"), caseInsensitive)
+            }
+        }
+
+        @Test
         fun `applyFiltersOn with GT operator on integer column`() {
             val filter =
                 FilterRequest(

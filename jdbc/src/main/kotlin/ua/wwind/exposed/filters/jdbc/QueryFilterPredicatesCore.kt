@@ -22,6 +22,7 @@ import org.jetbrains.exposed.v1.core.isNotNull
 import org.jetbrains.exposed.v1.core.isNull
 import org.jetbrains.exposed.v1.core.java.UUIDColumnType
 import org.jetbrains.exposed.v1.core.like
+import org.jetbrains.exposed.v1.core.lowerCase
 import org.jetbrains.exposed.v1.core.not
 import ua.wwind.exposed.filters.core.FieldFilter
 import ua.wwind.exposed.filters.core.FilterOperator
@@ -31,7 +32,7 @@ import kotlin.uuid.Uuid
 /**
  * Core predicate builder for field filters - dispatches to specialized handlers.
  */
-context(mappersModule: ColumnMappersModule?)
+context(mappersModule: ColumnMappersModule?, options: FilterOptions)
 internal fun predicateFor(
     expr: ExpressionWithColumnType<*>,
     filter: FieldFilter,
@@ -72,12 +73,18 @@ internal fun predicateFor(
 /**
  * LIKE predicate for string columns.
  */
+context(options: FilterOptions)
 internal fun likeString(
     expr: ExpressionWithColumnType<*>,
     pattern: String,
     fieldName: String
 ): Op<Boolean> = when (expr.columnType) {
-    is VarCharColumnType, is TextColumnType -> (expr as ExpressionWithColumnType<String>).like(pattern)
+    is VarCharColumnType, is TextColumnType -> {
+        @Suppress("UNCHECKED_CAST")
+        val stringExpr = expr as ExpressionWithColumnType<String>
+        if (options.caseSensitiveStrings) stringExpr.like(pattern)
+        else stringExpr.lowerCase().like(pattern.lowercase())
+    }
     else -> error("LIKE is only supported for string fields: '$fieldName'")
 }
 
@@ -85,7 +92,7 @@ internal fun likeString(
  * Equality predicate for a single value.
  */
 @OptIn(ExperimentalUuidApi::class)
-context(mappersModule: ColumnMappersModule?)
+context(mappersModule: ColumnMappersModule?, options: FilterOptions)
 internal fun eqValue(
     expr: ExpressionWithColumnType<*>,
     raw: String?,
@@ -126,7 +133,12 @@ internal fun eqValue(
         is LongColumnType -> (expr as ExpressionWithColumnType<Long>).eq(raw.toLong())
         is ShortColumnType -> (expr as ExpressionWithColumnType<Short>).eq(raw.toShort())
         is DoubleColumnType -> (expr as ExpressionWithColumnType<Double>).eq(raw.toDouble())
-        is VarCharColumnType, is TextColumnType -> (expr as ExpressionWithColumnType<String>).eq(raw)
+        is VarCharColumnType, is TextColumnType -> {
+            @Suppress("UNCHECKED_CAST")
+            val stringExpr = expr as ExpressionWithColumnType<String>
+            if (options.caseSensitiveStrings) stringExpr.eq(raw)
+            else stringExpr.lowerCase().eq(raw.lowercase())
+        }
         is UUIDColumnType -> (expr as ExpressionWithColumnType<java.util.UUID>).eq(java.util.UUID.fromString(raw))
         is UuidColumnType -> (expr as ExpressionWithColumnType<Uuid>).eq(Uuid.parse(raw))
         is BooleanColumnType -> (expr as ExpressionWithColumnType<Boolean>).eq(raw.toBooleanStrict())
@@ -144,7 +156,7 @@ internal fun eqValue(
  * IN predicate for a list of values.
  */
 @OptIn(ExperimentalUuidApi::class)
-context(mappersModule: ColumnMappersModule?)
+context(mappersModule: ColumnMappersModule?, options: FilterOptions)
 internal fun inListValue(
     expr: ExpressionWithColumnType<*>,
     raws: List<String>,
@@ -185,7 +197,12 @@ internal fun inListValue(
         is LongColumnType -> (expr as ExpressionWithColumnType<Long>).inList(raws.map(String::toLong))
         is ShortColumnType -> (expr as ExpressionWithColumnType<Short>).inList(raws.map(String::toShort))
         is DoubleColumnType -> (expr as ExpressionWithColumnType<Double>).inList(raws.map(String::toDouble))
-        is VarCharColumnType, is TextColumnType -> (expr as ExpressionWithColumnType<String>).inList(raws)
+        is VarCharColumnType, is TextColumnType -> {
+            @Suppress("UNCHECKED_CAST")
+            val stringExpr = expr as ExpressionWithColumnType<String>
+            if (options.caseSensitiveStrings) stringExpr.inList(raws)
+            else stringExpr.lowerCase().inList(raws.map(String::lowercase))
+        }
         is UUIDColumnType -> (expr as ExpressionWithColumnType<java.util.UUID>).inList(raws.map(java.util.UUID::fromString))
         is UuidColumnType -> (expr as ExpressionWithColumnType<Uuid>).inList(raws.map(Uuid::parse))
         is BooleanColumnType -> (expr as ExpressionWithColumnType<Boolean>).inList(raws.map(String::toBooleanStrict))
@@ -201,7 +218,7 @@ internal fun inListValue(
 /**
  * BETWEEN predicate for range of values.
  */
-context(mappersModule: ColumnMappersModule?)
+context(mappersModule: ColumnMappersModule?, options: FilterOptions)
 internal fun betweenValues(
     expr: ExpressionWithColumnType<*>,
     raws: List<String>,
@@ -251,7 +268,12 @@ internal fun betweenValues(
         is LongColumnType -> (expr as ExpressionWithColumnType<Long>).between(from.toLong(), to.toLong())
         is ShortColumnType -> (expr as ExpressionWithColumnType<Short>).between(from.toShort(), to.toShort())
         is DoubleColumnType -> (expr as ExpressionWithColumnType<Double>).between(from.toDouble(), to.toDouble())
-        is VarCharColumnType, is TextColumnType -> (expr as ExpressionWithColumnType<String>).between(from, to)
+        is VarCharColumnType, is TextColumnType -> {
+            @Suppress("UNCHECKED_CAST")
+            val stringExpr = expr as ExpressionWithColumnType<String>
+            if (options.caseSensitiveStrings) stringExpr.between(from, to)
+            else stringExpr.lowerCase().between(from.lowercase(), to.lowercase())
+        }
         else -> error("Unsupported BETWEEN for field '$fieldName'")
     }
 }

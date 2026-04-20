@@ -33,11 +33,15 @@ import kotlin.reflect.jvm.isAccessible
  *     .applyFiltersOn(join, filter)  // field: "name", "title", "warehouse_id" (SQL names)
  * ```
  */
-public fun Query.applyFiltersOn(columnSet: ColumnSet, filterRequest: FilterRequest?): Query {
+public fun Query.applyFiltersOn(
+    columnSet: ColumnSet,
+    filterRequest: FilterRequest?,
+    options: FilterOptions = DefaultFilterOptions,
+): Query {
     if (filterRequest == null) return this
     val root = filterRequest.root
     val columns = columnSet.toColumnMap()
-    val predicate = context(null as ColumnMappersModule?) { nodeToPredicate(root, columns) } ?: return this
+    val predicate = context(null as ColumnMappersModule?, options) { nodeToPredicate(root, columns) } ?: return this
     return andWhere { predicate }
 }
 
@@ -48,12 +52,13 @@ public fun Query.applyFiltersOn(columnSet: ColumnSet, filterRequest: FilterReque
 public fun Query.applyFiltersOn(
     columnSet: ColumnSet,
     filterRequest: FilterRequest?,
-    mappersModule: ColumnMappersModule
+    mappersModule: ColumnMappersModule,
+    options: FilterOptions = DefaultFilterOptions,
 ): Query {
     if (filterRequest == null) return this
     val root = filterRequest.root
     val columns = columnSet.toColumnMap()
-    val predicate = context(mappersModule) { nodeToPredicate(root, columns) } ?: return this
+    val predicate = context(mappersModule, options) { nodeToPredicate(root, columns) } ?: return this
     return andWhere { predicate }
 }
 
@@ -69,11 +74,12 @@ public fun Query.applyFiltersOn(
  */
 public fun Query.applyFilters(
     expressions: Map<String, ExpressionWithColumnType<*>>,
-    filterRequest: FilterRequest?
+    filterRequest: FilterRequest?,
+    options: FilterOptions = DefaultFilterOptions,
 ): Query {
     if (filterRequest == null) return this
     val root = filterRequest.root
-    val predicate = context(null as ColumnMappersModule?) { nodeToPredicate(root, expressions) } ?: return this
+    val predicate = context(null as ColumnMappersModule?, options) { nodeToPredicate(root, expressions) } ?: return this
     return andWhere { predicate }
 }
 
@@ -83,11 +89,12 @@ public fun Query.applyFilters(
 public fun Query.applyFilters(
     expressions: Map<String, ExpressionWithColumnType<*>>,
     filterRequest: FilterRequest?,
-    mappersModule: ColumnMappersModule
+    mappersModule: ColumnMappersModule,
+    options: FilterOptions = DefaultFilterOptions,
 ): Query {
     if (filterRequest == null) return this
     val root = filterRequest.root
-    val predicate = context(mappersModule) { nodeToPredicate(root, expressions) } ?: return this
+    val predicate = context(mappersModule, options) { nodeToPredicate(root, expressions) } ?: return this
     return andWhere { predicate }
 }
 

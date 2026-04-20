@@ -14,6 +14,7 @@ import org.jetbrains.exposed.v1.core.isNotNull
 import org.jetbrains.exposed.v1.core.isNull
 import org.jetbrains.exposed.v1.core.less
 import org.jetbrains.exposed.v1.core.lessEq
+import org.jetbrains.exposed.v1.core.lowerCase
 import org.jetbrains.exposed.v1.core.not
 import org.jetbrains.exposed.v1.json.extract
 import ua.wwind.exposed.filters.core.FieldFilter
@@ -25,7 +26,7 @@ import java.sql.Timestamp as SqlTimestamp
 /**
  * Builds a predicate for JSON/JSONB field paths (e.g., payload.address.city).
  */
-context(mappersModule: ColumnMappersModule?)
+context(mappersModule: ColumnMappersModule?, options: FilterOptions)
 internal fun jsonPathPredicateFor(
     jsonExpr: ExpressionWithColumnType<*>,
     pathSegments: List<String>,
@@ -114,6 +115,7 @@ internal fun jsonPathPredicateFor(
     }
 }
 
+context(options: FilterOptions)
 private fun jsonEqTyped(
     extracted: ExpressionWithColumnType<String>,
     raw: String,
@@ -141,10 +143,15 @@ private fun jsonEqTyped(
             expr.eq(typed.value as SqlTimestamp)
         }
 
-        JsonInferredType.STRING -> extracted.eq(typed.value as String)
+        JsonInferredType.STRING -> {
+            val value = typed.value as String
+            if (options.caseSensitiveStrings) extracted.eq(value)
+            else extracted.lowerCase().eq(value.lowercase())
+        }
     }
 }
 
+context(options: FilterOptions)
 private fun jsonInTyped(
     extracted: ExpressionWithColumnType<String>,
     raws: List<String>,
@@ -178,10 +185,15 @@ private fun jsonInTyped(
             expr.inList(values)
         }
 
-        JsonInferredType.STRING -> extracted.inList(typedValues.map { it.value as String })
+        JsonInferredType.STRING -> {
+            val values = typedValues.map { it.value as String }
+            if (options.caseSensitiveStrings) extracted.inList(values)
+            else extracted.lowerCase().inList(values.map(String::lowercase))
+        }
     }
 }
 
+context(options: FilterOptions)
 private fun jsonBetweenTyped(
     extracted: ExpressionWithColumnType<String>,
     raws: List<String>,
@@ -208,11 +220,17 @@ private fun jsonBetweenTyped(
             expr.between(left.value as SqlTimestamp, right.value as SqlTimestamp)
         }
 
-        JsonInferredType.STRING -> extracted.between(left.value as String, right.value as String)
+        JsonInferredType.STRING -> {
+            val leftValue = left.value as String
+            val rightValue = right.value as String
+            if (options.caseSensitiveStrings) extracted.between(leftValue, rightValue)
+            else extracted.lowerCase().between(leftValue.lowercase(), rightValue.lowercase())
+        }
         JsonInferredType.BOOLEAN -> error("BETWEEN is not supported for boolean JSON values: '$fieldName'")
     }
 }
 
+context(options: FilterOptions)
 private fun jsonCompareTyped(
     extracted: ExpressionWithColumnType<String>,
     raw: String,
@@ -240,8 +258,17 @@ private fun jsonCompareTyped(
         }
 
         JsonInferredType.STRING -> {
-            @Suppress("UNCHECKED_CAST")
-            comparator(extracted as ExpressionWithColumnType<Comparable<Any>>, typed.value as Comparable<Any>)
+            val value = typed.value as String
+            if (options.caseSensitiveStrings) {
+                @Suppress("UNCHECKED_CAST")
+                comparator(extracted as ExpressionWithColumnType<Comparable<Any>>, value as Comparable<Any>)
+            } else {
+                @Suppress("UNCHECKED_CAST")
+                comparator(
+                    extracted.lowerCase() as ExpressionWithColumnType<Comparable<Any>>,
+                    value.lowercase() as Comparable<Any>
+                )
+            }
         }
 
         JsonInferredType.BOOLEAN -> error("Comparison operator is not supported for boolean JSON values: '$fieldName'")

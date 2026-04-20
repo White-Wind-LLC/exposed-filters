@@ -14,6 +14,7 @@ import org.jetbrains.exposed.v1.core.greaterEq
 import org.jetbrains.exposed.v1.core.java.UUIDColumnType
 import org.jetbrains.exposed.v1.core.less
 import org.jetbrains.exposed.v1.core.lessEq
+import org.jetbrains.exposed.v1.core.lowerCase
 import kotlin.uuid.ExperimentalUuidApi
 import kotlin.uuid.Uuid
 
@@ -21,7 +22,7 @@ import kotlin.uuid.Uuid
  * Greater-than comparison predicate.
  */
 @OptIn(ExperimentalUuidApi::class)
-context(mappersModule: ColumnMappersModule?)
+context(mappersModule: ColumnMappersModule?, options: FilterOptions)
 internal fun compareGreater(
     expr: ExpressionWithColumnType<*>,
     raw: String?,
@@ -56,7 +57,12 @@ internal fun compareGreater(
         is LongColumnType -> (expr as ExpressionWithColumnType<Long>).greater(raw.toLong())
         is ShortColumnType -> (expr as ExpressionWithColumnType<Short>).greater(raw.toShort())
         is DoubleColumnType -> (expr as ExpressionWithColumnType<Double>).greater(raw.toDouble())
-        is VarCharColumnType, is TextColumnType -> (expr as ExpressionWithColumnType<String>).greater(raw)
+        is VarCharColumnType, is TextColumnType -> {
+            @Suppress("UNCHECKED_CAST")
+            val stringExpr = expr as ExpressionWithColumnType<String>
+            if (options.caseSensitiveStrings) stringExpr.greater(raw)
+            else stringExpr.lowerCase().greater(raw.lowercase())
+        }
         is UUIDColumnType -> (expr as ExpressionWithColumnType<java.util.UUID>).greater(java.util.UUID.fromString(raw))
         is UuidColumnType -> (expr as ExpressionWithColumnType<Uuid>).greater(Uuid.parse(raw))
         else -> error("Unsupported comparison for field '$fieldName'")
@@ -67,7 +73,7 @@ internal fun compareGreater(
  * Greater-than-or-equal comparison predicate.
  */
 @OptIn(ExperimentalUuidApi::class)
-context(mappersModule: ColumnMappersModule?)
+context(mappersModule: ColumnMappersModule?, options: FilterOptions)
 internal fun compareGreaterEq(
     expr: ExpressionWithColumnType<*>,
     raw: String?,
@@ -102,7 +108,12 @@ internal fun compareGreaterEq(
         is LongColumnType -> (expr as ExpressionWithColumnType<Long>).greaterEq(raw.toLong())
         is ShortColumnType -> (expr as ExpressionWithColumnType<Short>).greaterEq(raw.toShort())
         is DoubleColumnType -> (expr as ExpressionWithColumnType<Double>).greaterEq(raw.toDouble())
-        is VarCharColumnType, is TextColumnType -> (expr as ExpressionWithColumnType<String>).greaterEq(raw)
+        is VarCharColumnType, is TextColumnType -> {
+            @Suppress("UNCHECKED_CAST")
+            val stringExpr = expr as ExpressionWithColumnType<String>
+            if (options.caseSensitiveStrings) stringExpr.greaterEq(raw)
+            else stringExpr.lowerCase().greaterEq(raw.lowercase())
+        }
         is UUIDColumnType -> (expr as ExpressionWithColumnType<java.util.UUID>).greaterEq(java.util.UUID.fromString(raw))
         is UuidColumnType -> (expr as ExpressionWithColumnType<Uuid>).greaterEq(Uuid.parse(raw))
         else -> error("Unsupported comparison for field '$fieldName'")
@@ -113,7 +124,7 @@ internal fun compareGreaterEq(
  * Less-than comparison predicate.
  */
 @OptIn(ExperimentalUuidApi::class)
-context(mappersModule: ColumnMappersModule?)
+context(mappersModule: ColumnMappersModule?, options: FilterOptions)
 internal fun compareLess(
     expr: ExpressionWithColumnType<*>,
     raw: String?,
@@ -148,7 +159,12 @@ internal fun compareLess(
         is LongColumnType -> (expr as ExpressionWithColumnType<Long>).less(raw.toLong())
         is ShortColumnType -> (expr as ExpressionWithColumnType<Short>).less(raw.toShort())
         is DoubleColumnType -> (expr as ExpressionWithColumnType<Double>).less(raw.toDouble())
-        is VarCharColumnType, is TextColumnType -> (expr as ExpressionWithColumnType<String>).less(raw)
+        is VarCharColumnType, is TextColumnType -> {
+            @Suppress("UNCHECKED_CAST")
+            val stringExpr = expr as ExpressionWithColumnType<String>
+            if (options.caseSensitiveStrings) stringExpr.less(raw)
+            else stringExpr.lowerCase().less(raw.lowercase())
+        }
         is UUIDColumnType -> (expr as ExpressionWithColumnType<java.util.UUID>).less(java.util.UUID.fromString(raw))
         is UuidColumnType -> (expr as ExpressionWithColumnType<Uuid>).less(Uuid.parse(raw))
         else -> error("Unsupported comparison for field '$fieldName'")
@@ -159,7 +175,7 @@ internal fun compareLess(
  * Less-than-or-equal comparison predicate.
  */
 @OptIn(ExperimentalUuidApi::class)
-context(mappersModule: ColumnMappersModule?)
+context(mappersModule: ColumnMappersModule?, options: FilterOptions)
 internal fun compareLessEq(
     expr: ExpressionWithColumnType<*>,
     raw: String?,
@@ -194,7 +210,12 @@ internal fun compareLessEq(
         is LongColumnType -> (expr as ExpressionWithColumnType<Long>).lessEq(raw.toLong())
         is ShortColumnType -> (expr as ExpressionWithColumnType<Short>).lessEq(raw.toShort())
         is DoubleColumnType -> (expr as ExpressionWithColumnType<Double>).lessEq(raw.toDouble())
-        is VarCharColumnType, is TextColumnType -> (expr as ExpressionWithColumnType<String>).lessEq(raw)
+        is VarCharColumnType, is TextColumnType -> {
+            @Suppress("UNCHECKED_CAST")
+            val stringExpr = expr as ExpressionWithColumnType<String>
+            if (options.caseSensitiveStrings) stringExpr.lessEq(raw)
+            else stringExpr.lowerCase().lessEq(raw.lowercase())
+        }
         is UUIDColumnType -> (expr as ExpressionWithColumnType<java.util.UUID>).lessEq(java.util.UUID.fromString(raw))
         is UuidColumnType -> (expr as ExpressionWithColumnType<Uuid>).lessEq(Uuid.parse(raw))
         else -> error("Unsupported comparison for field '$fieldName'")

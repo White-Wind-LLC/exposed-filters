@@ -18,7 +18,7 @@ import ua.wwind.exposed.filters.core.FilterGroup
 import ua.wwind.exposed.filters.core.FilterLeaf
 import ua.wwind.exposed.filters.core.FilterNode
 
-context(mappersModule: ColumnMappersModule?)
+context(mappersModule: ColumnMappersModule?, options: FilterOptions)
 internal fun nodeToPredicate(
     node: FilterNode,
     expressions: Map<String, ExpressionWithColumnType<*>>,
@@ -48,7 +48,7 @@ internal fun nodeToPredicate(
     }
 }
 
-context(mappersModule: ColumnMappersModule?)
+context(mappersModule: ColumnMappersModule?, options: FilterOptions)
 internal fun predicateForField(
     expressions: Map<String, ExpressionWithColumnType<*>>,
     filter: FieldFilter,
