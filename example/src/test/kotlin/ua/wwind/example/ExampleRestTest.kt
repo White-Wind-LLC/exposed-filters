@@ -213,4 +213,95 @@ class ExampleRestTest {
         val expected = listOf("Bob", "Carol", "Eve", "Grace", "Ivy").sorted()
         assertEquals(expected, actual)
     }
+
+    @Test
+    fun `POST users EQ is case-insensitive by default`() = testApplication {
+        application { module() }
+
+        val filterJson = filterRequest {
+            "name" eq "ALICE"
+        }!!.toJsonString()
+
+        val response: HttpResponse = client.post("/users") {
+            contentType(ContentType.Application.Json)
+            setBody(filterJson)
+        }
+
+        assertEquals(HttpStatusCode.OK, response.status)
+        val users: List<UserDto> = json.decodeFromString(response.bodyAsText())
+        assertEquals(listOf("Alice"), users.map { it.name })
+    }
+
+    @Test
+    fun `POST users CONTAINS is case-insensitive by default`() = testApplication {
+        application { module() }
+
+        val filterJson = filterRequest {
+            "name" contains "CAR"
+        }!!.toJsonString()
+
+        val response: HttpResponse = client.post("/users") {
+            contentType(ContentType.Application.Json)
+            setBody(filterJson)
+        }
+
+        assertEquals(HttpStatusCode.OK, response.status)
+        val users: List<UserDto> = json.decodeFromString(response.bodyAsText())
+        assertEquals(listOf("Carol"), users.map { it.name })
+    }
+
+    @Test
+    fun `POST users IN is case-insensitive by default`() = testApplication {
+        application { module() }
+
+        val filterJson = filterRequest {
+            "name" inList listOf("ALICE", "bob")
+        }!!.toJsonString()
+
+        val response: HttpResponse = client.post("/users") {
+            contentType(ContentType.Application.Json)
+            setBody(filterJson)
+        }
+
+        assertEquals(HttpStatusCode.OK, response.status)
+        val users: List<UserDto> = json.decodeFromString(response.bodyAsText())
+        val actual = users.map { it.name }.sorted()
+        assertEquals(listOf("Alice", "Bob"), actual)
+    }
+
+    @Test
+    fun `POST users with caseSensitive=true excludes wrong-case matches`() = testApplication {
+        application { module() }
+
+        val filterJson = filterRequest {
+            "name" eq "ALICE"
+        }!!.toJsonString()
+
+        val response: HttpResponse = client.post("/users?caseSensitive=true") {
+            contentType(ContentType.Application.Json)
+            setBody(filterJson)
+        }
+
+        assertEquals(HttpStatusCode.OK, response.status)
+        val users: List<UserDto> = json.decodeFromString(response.bodyAsText())
+        assertEquals(emptyList<UserDto>(), users)
+    }
+
+    @Test
+    fun `POST users with caseSensitive=true matches exact case`() = testApplication {
+        application { module() }
+
+        val filterJson = filterRequest {
+            "name" eq "Alice"
+        }!!.toJsonString()
+
+        val response: HttpResponse = client.post("/users?caseSensitive=true") {
+            contentType(ContentType.Application.Json)
+            setBody(filterJson)
+        }
+
+        assertEquals(HttpStatusCode.OK, response.status)
+        val users: List<UserDto> = json.decodeFromString(response.bodyAsText())
+        assertEquals(listOf("Alice"), users.map { it.name })
+    }
 }

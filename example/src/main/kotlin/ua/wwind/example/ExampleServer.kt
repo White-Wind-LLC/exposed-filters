@@ -28,6 +28,7 @@ import ua.wwind.example.type.ProductId
 import ua.wwind.example.type.ProductIdColumnType
 import ua.wwind.example.type.WarehouseId
 import ua.wwind.example.type.WarehouseIdColumnType
+import ua.wwind.exposed.filters.jdbc.FilterOptions
 import ua.wwind.exposed.filters.jdbc.applyFiltersOn
 import ua.wwind.exposed.filters.jdbc.columnMappers
 import ua.wwind.exposed.filters.rest.receiveFilterRequestOrNull
@@ -152,10 +153,13 @@ fun Application.module() {
         // Demonstration endpoint: selectAll + filters
         post("/users") {
             val filter = call.receiveFilterRequestOrNull()
+            val caseSensitive = call.request.queryParameters["caseSensitive"]
+                ?.toBooleanStrictOrNull() ?: false
+            val options = FilterOptions(caseSensitiveStrings = caseSensitive)
             val items: List<UserDto> = transaction {
                 UserTable
                     .selectAll()
-                    .applyFiltersOn(UserTable, filter)
+                    .applyFiltersOn(UserTable, filter, options)
                     .map { row ->
                         UserDto(
                             id = row[UserTable.id].value,
