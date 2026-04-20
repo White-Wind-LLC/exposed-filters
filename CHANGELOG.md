@@ -2,6 +2,25 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.6.2] - 2026-04-20
+
+- JDBC: make string filters case-insensitive by default
+    - New `FilterOptions` type with `caseSensitiveStrings` flag (default `false`) controls case sensitivity for string
+      predicates
+    - When case-insensitive, `LOWER()` is applied on both sides of string comparisons on `VarChar`/`Text` columns and
+      JSON string values
+    - Affects all string operators: `EQ`, `NEQ`, `IN`, `NOT_IN`, `CONTAINS`, `STARTS_WITH`, `ENDS_WITH`, `BETWEEN`,
+      `GT`, `GTE`, `LT`, `LTE`
+    - Pass `FilterOptions(caseSensitiveStrings = true)` to `applyFiltersOn`/`applyFilters` to opt back into
+      case-sensitive matching
+- Core: fix OR/NOT semantics in DSL predicate groups
+    - Local predicates within a node are now split into separate leaves when the node combinator is `OR` or `NOT`,
+      preventing them from being merged into a single leaf that was translated as `AND` at the JDBC level
+    - Added core builder tests validating nested `OR` structure with `IS_NULL` + `EQ`, and a JDBC behavior test
+      verifying null-or-equals filtering works as `OR`
+
+**Full Changelog**: https://github.com/White-Wind-LLC/exposed-filters/compare/v1.6.1...v1.6.2
+
 ## [1.6.1] - 2026-04-15
 
 - Core: fix DSL context leakage in nested filter builder blocks
