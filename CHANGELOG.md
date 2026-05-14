@@ -2,6 +2,16 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.7.0] - 2026-05-14
+
+- Dependencies: upgrade library versions
+    - Kotlin: `2.3.20` → `2.3.21`
+    - Exposed: `1.2.0` → `1.3.0`
+    - Ktor: `3.4.2` → `3.4.3`
+    - kotlinx-datetime: `0.7.1` → `0.8.0`
+
+**Full Changelog**: https://github.com/White-Wind-LLC/exposed-filters/compare/v1.6.2...v1.7.0
+
 ## [1.6.2] - 2026-04-20
 
 - JDBC: make string filters case-insensitive by default
