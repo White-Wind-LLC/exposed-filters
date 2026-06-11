@@ -61,7 +61,9 @@ internal fun jsonPathPredicateFor(
                 FilterOperator.ENDS_WITH -> "%${inferred.value as String}"
                 else -> error("Unsupported operator")
             }
-            likeString(extracted, pattern, fieldName)
+            context(options.copy(normalizedStringFields = emptySet())) {
+                likeString(extracted, pattern, fieldName)
+            }
         }
 
         FilterOperator.EQ -> jsonEqTyped(

@@ -2,6 +2,19 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.8.0] - 2026-06-11
+
+- JDBC: per-field normalized string comparison
+    - New `FilterOptions.normalizedStringFields: Set<String>` (default empty). For listed fields,
+      case-insensitive string predicates lowercase only the input value and compare the column raw
+      (`column = ?` instead of `LOWER(column) = ?`), so a plain B-tree index on the column serves
+      the query. The caller guarantees the column stores lowercase values.
+    - Affects `EQ`, `NEQ`, `IN`, `NOT_IN`, `CONTAINS`, `STARTS_WITH`, `ENDS_WITH`, `BETWEEN`,
+      `GT/GTE/LT/LTE` on `VarChar`/`Text` columns. JSON/JSONB string paths are unaffected.
+    - Ignored when `caseSensitiveStrings = true`.
+
+**Full Changelog**: https://github.com/White-Wind-LLC/exposed-filters/compare/v1.7.0...v1.8.0
+
 ## [1.7.0] - 2026-05-14
 
 - Dependencies: upgrade library versions

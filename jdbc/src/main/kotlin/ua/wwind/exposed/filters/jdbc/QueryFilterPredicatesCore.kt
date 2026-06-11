@@ -82,8 +82,11 @@ internal fun likeString(
     is VarCharColumnType, is TextColumnType -> {
         @Suppress("UNCHECKED_CAST")
         val stringExpr = expr as ExpressionWithColumnType<String>
-        if (options.caseSensitiveStrings) stringExpr.like(pattern)
-        else stringExpr.lowerCase().like(pattern.lowercase())
+        when {
+            options.caseSensitiveStrings -> stringExpr.like(pattern)
+            options.usesNormalizedComparison(fieldName) -> stringExpr.like(pattern.lowercase())
+            else -> stringExpr.lowerCase().like(pattern.lowercase())
+        }
     }
     else -> error("LIKE is only supported for string fields: '$fieldName'")
 }
@@ -136,8 +139,11 @@ internal fun eqValue(
         is VarCharColumnType, is TextColumnType -> {
             @Suppress("UNCHECKED_CAST")
             val stringExpr = expr as ExpressionWithColumnType<String>
-            if (options.caseSensitiveStrings) stringExpr.eq(raw)
-            else stringExpr.lowerCase().eq(raw.lowercase())
+            when {
+                options.caseSensitiveStrings -> stringExpr.eq(raw)
+                options.usesNormalizedComparison(fieldName) -> stringExpr.eq(raw.lowercase())
+                else -> stringExpr.lowerCase().eq(raw.lowercase())
+            }
         }
         is UUIDColumnType -> (expr as ExpressionWithColumnType<java.util.UUID>).eq(java.util.UUID.fromString(raw))
         is UuidColumnType -> (expr as ExpressionWithColumnType<Uuid>).eq(Uuid.parse(raw))
@@ -200,8 +206,11 @@ internal fun inListValue(
         is VarCharColumnType, is TextColumnType -> {
             @Suppress("UNCHECKED_CAST")
             val stringExpr = expr as ExpressionWithColumnType<String>
-            if (options.caseSensitiveStrings) stringExpr.inList(raws)
-            else stringExpr.lowerCase().inList(raws.map(String::lowercase))
+            when {
+                options.caseSensitiveStrings -> stringExpr.inList(raws)
+                options.usesNormalizedComparison(fieldName) -> stringExpr.inList(raws.map(String::lowercase))
+                else -> stringExpr.lowerCase().inList(raws.map(String::lowercase))
+            }
         }
         is UUIDColumnType -> (expr as ExpressionWithColumnType<java.util.UUID>).inList(raws.map(java.util.UUID::fromString))
         is UuidColumnType -> (expr as ExpressionWithColumnType<Uuid>).inList(raws.map(Uuid::parse))
@@ -271,8 +280,11 @@ internal fun betweenValues(
         is VarCharColumnType, is TextColumnType -> {
             @Suppress("UNCHECKED_CAST")
             val stringExpr = expr as ExpressionWithColumnType<String>
-            if (options.caseSensitiveStrings) stringExpr.between(from, to)
-            else stringExpr.lowerCase().between(from.lowercase(), to.lowercase())
+            when {
+                options.caseSensitiveStrings -> stringExpr.between(from, to)
+                options.usesNormalizedComparison(fieldName) -> stringExpr.between(from.lowercase(), to.lowercase())
+                else -> stringExpr.lowerCase().between(from.lowercase(), to.lowercase())
+            }
         }
         else -> error("Unsupported BETWEEN for field '$fieldName'")
     }

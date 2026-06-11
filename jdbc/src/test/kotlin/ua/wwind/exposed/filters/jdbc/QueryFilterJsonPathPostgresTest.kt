@@ -5,6 +5,7 @@ import kotlinx.datetime.LocalDateTime
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 import org.jetbrains.exposed.v1.core.Column
+import org.jetbrains.exposed.v1.core.QueryBuilder
 import org.jetbrains.exposed.v1.core.Table
 import org.jetbrains.exposed.v1.jdbc.Database
 import org.jetbrains.exposed.v1.jdbc.SchemaUtils
@@ -14,11 +15,16 @@ import org.jetbrains.exposed.v1.jdbc.transactions.transaction
 import org.jetbrains.exposed.v1.json.jsonb
 import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
 import org.testcontainers.junit.jupiter.Container
 import org.testcontainers.junit.jupiter.Testcontainers
 import org.testcontainers.postgresql.PostgreSQLContainer
+import ua.wwind.exposed.filters.core.FieldFilter
+import ua.wwind.exposed.filters.core.FilterLeaf
+import ua.wwind.exposed.filters.core.FilterOperator
+import ua.wwind.exposed.filters.core.FilterRequest
 import ua.wwind.exposed.filters.core.filterRequest
 
 @Serializable
@@ -495,5 +501,27 @@ class QueryFilterJsonPathPostgresTest {
             PgJsonPathUsersTable.selectAll().applyFiltersOn(PgJsonPathUsersTable, filter).count()
         }
         assertEquals(2, count)
+    }
+
+    // Finding 1 regression: normalizedStringFields must not suppress LOWER on a JSON path LIKE predicate.
+    @Test
+    fun `STARTS_WITH on JSON path field listed in normalizedStringFields still uses LOWER and matches case-insensitively`() {
+        val field = "payload.profile.meta.tier"
+        val options = FilterOptions(normalizedStringFields = setOf(field))
+        val filter = FilterRequest(
+            FilterLeaf(listOf(FieldFilter(field, FilterOperator.STARTS_WITH, listOf("GOL")))),
+        )
+
+        transaction {
+            val query = PgJsonPathUsersTable.selectAll().applyFiltersOn(PgJsonPathUsersTable, filter, options)
+            val sql = query.prepareSQL(QueryBuilder(false))
+            assertTrue(
+                sql.contains("LOWER", ignoreCase = true),
+                "JSON path STARTS_WITH must still emit LOWER even when field is in normalizedStringFields: $sql",
+            )
+            // Behavioral: "GOL" uppercased should still match the stored lowercase "gold" value.
+            val count = query.count()
+            assertEquals(1, count)
+        }
     }
 }

@@ -60,8 +60,11 @@ internal fun compareGreater(
         is VarCharColumnType, is TextColumnType -> {
             @Suppress("UNCHECKED_CAST")
             val stringExpr = expr as ExpressionWithColumnType<String>
-            if (options.caseSensitiveStrings) stringExpr.greater(raw)
-            else stringExpr.lowerCase().greater(raw.lowercase())
+            when {
+                options.caseSensitiveStrings -> stringExpr.greater(raw)
+                options.usesNormalizedComparison(fieldName) -> stringExpr.greater(raw.lowercase())
+                else -> stringExpr.lowerCase().greater(raw.lowercase())
+            }
         }
         is UUIDColumnType -> (expr as ExpressionWithColumnType<java.util.UUID>).greater(java.util.UUID.fromString(raw))
         is UuidColumnType -> (expr as ExpressionWithColumnType<Uuid>).greater(Uuid.parse(raw))
@@ -111,8 +114,11 @@ internal fun compareGreaterEq(
         is VarCharColumnType, is TextColumnType -> {
             @Suppress("UNCHECKED_CAST")
             val stringExpr = expr as ExpressionWithColumnType<String>
-            if (options.caseSensitiveStrings) stringExpr.greaterEq(raw)
-            else stringExpr.lowerCase().greaterEq(raw.lowercase())
+            when {
+                options.caseSensitiveStrings -> stringExpr.greaterEq(raw)
+                options.usesNormalizedComparison(fieldName) -> stringExpr.greaterEq(raw.lowercase())
+                else -> stringExpr.lowerCase().greaterEq(raw.lowercase())
+            }
         }
         is UUIDColumnType -> (expr as ExpressionWithColumnType<java.util.UUID>).greaterEq(java.util.UUID.fromString(raw))
         is UuidColumnType -> (expr as ExpressionWithColumnType<Uuid>).greaterEq(Uuid.parse(raw))
@@ -162,8 +168,11 @@ internal fun compareLess(
         is VarCharColumnType, is TextColumnType -> {
             @Suppress("UNCHECKED_CAST")
             val stringExpr = expr as ExpressionWithColumnType<String>
-            if (options.caseSensitiveStrings) stringExpr.less(raw)
-            else stringExpr.lowerCase().less(raw.lowercase())
+            when {
+                options.caseSensitiveStrings -> stringExpr.less(raw)
+                options.usesNormalizedComparison(fieldName) -> stringExpr.less(raw.lowercase())
+                else -> stringExpr.lowerCase().less(raw.lowercase())
+            }
         }
         is UUIDColumnType -> (expr as ExpressionWithColumnType<java.util.UUID>).less(java.util.UUID.fromString(raw))
         is UuidColumnType -> (expr as ExpressionWithColumnType<Uuid>).less(Uuid.parse(raw))
@@ -213,8 +222,11 @@ internal fun compareLessEq(
         is VarCharColumnType, is TextColumnType -> {
             @Suppress("UNCHECKED_CAST")
             val stringExpr = expr as ExpressionWithColumnType<String>
-            if (options.caseSensitiveStrings) stringExpr.lessEq(raw)
-            else stringExpr.lowerCase().lessEq(raw.lowercase())
+            when {
+                options.caseSensitiveStrings -> stringExpr.lessEq(raw)
+                options.usesNormalizedComparison(fieldName) -> stringExpr.lessEq(raw.lowercase())
+                else -> stringExpr.lowerCase().lessEq(raw.lowercase())
+            }
         }
         is UUIDColumnType -> (expr as ExpressionWithColumnType<java.util.UUID>).lessEq(java.util.UUID.fromString(raw))
         is UuidColumnType -> (expr as ExpressionWithColumnType<Uuid>).lessEq(Uuid.parse(raw))
