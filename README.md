@@ -1,32 +1,83 @@
-# Exposed ORM Universal Filters
+# Exposed Filters
+
+**Dynamic, type-safe query filtering for Kotlin [Exposed](https://github.com/JetBrains/Exposed) — turn JSON filter requests from your UI straight into safe SQL.**
+
+Send filters from your frontend — a data grid, table, search form, or admin panel — as JSON, and apply
+them to an Exposed query in a single line. No string concatenation, no SQL injection, full type safety,
+with nested `AND` / `OR` / `NOT` logic, related-entity filtering, and JSON/JSONB path filtering out of the box.
 
 [![Maven Central](https://img.shields.io/maven-central/v/ua.wwind.exposed-filters/exposed-filters-core)](https://central.sonatype.com/artifact/ua.wwind.exposed-filters/exposed-filters-core)
+[![License](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](LICENSE)
+[![Kotlin](https://img.shields.io/badge/kotlin-2.3.21-blue.svg?logo=kotlin)](https://kotlinlang.org)
 
-Type-safe, normalized filter model and utilities for building dynamic queries with JetBrains Exposed and Ktor.
+```text
+   UI / client
+        │   JSON filter request
+        ▼
+   exposed-filters-rest     parse & normalize  (Ktor)
+        │   FilterRequest  (typed filter tree)
+        ▼
+   exposed-filters-core     AND / OR / NOT, leaves, DSL
+        │   Op<Boolean>
+        ▼
+   exposed-filters-jdbc     Exposed DSL  →  SQL WHERE
+        ▼
+      Database
+```
 
-- Accept filters as JSON, parse them into a normalized filter tree, and safely apply them to Exposed queries.
-- Strong typing and SQL injection safety via Exposed DSL.
-- Flexible: use flat or nested (tree) filter structures with AND/OR/NOT combinators.
+> Keywords: Kotlin Exposed dynamic filtering, JSON filter to SQL, server-side filtering, query builder,
+> REST API filtering, data grid / table backend, search filters, AND/OR/NOT predicates, JSONB filtering, Ktor.
 
-- **Modules**:
-    - `core` – domain model (`FilterOperator`, `FilterNode`, normalization utils)
-    - `jdbc` – translation of filters to Exposed DSL predicates
-    - `rest` – Ktor helpers to parse HTTP JSON bodies into `FilterRequest`
-- **Artifacts** (Maven Central):
-    - `ua.wwind.exposed-filters:exposed-filters-core:<version>`
-    - `ua.wwind.exposed-filters:exposed-filters-jdbc:<version>`
-    - `ua.wwind.exposed-filters:exposed-filters-rest:<version>`
+## Why Exposed Filters?
+
+Exposed gives you a great typed SQL DSL, but it has no built-in way to accept *ad-hoc* filters from a client.
+In practice teams end up with one of two bad options:
+
+- **Fragile `if`-chains** — endless `if (param != null) andWhere { col eq param }` plumbing that grows with every new filter and every new endpoint.
+- **Unsafe query strings** — concatenating user input into SQL, opening the door to SQL injection.
+
+Exposed Filters replaces both with a typed pipeline: **client JSON → normalized filter tree → Exposed `Op<Boolean>` → SQL `WHERE`**.
+One reusable mechanism handles every endpoint, every operator, and arbitrarily nested logic — safely.
+
+## Features
+
+- 🔒 **Type-safe & injection-safe** — every value is bound through the Exposed DSL, never string-concatenated.
+- 🌳 **Flat or nested filters** — arbitrary `AND` / `OR` / `NOT` trees of conditions, any depth.
+- 🔁 **JSON in, JSON out** — parse client requests and serialize a `FilterRequest` back (cache, log, pass between services).
+- 🔗 **Related-entity filtering** — filter by a referenced table's field (`warehouseId.name`) via an `EXISTS` subquery.
+- 🧩 **JSON / JSONB path filtering** — drill into JSON columns (`payload.customer.address.city`).
+- 🔤 **Case-insensitive by default** — with an opt-in, index-friendly mode and a fully case-sensitive mode.
+- 🧮 **Rich operator set** — `EQ`, `NEQ`, `CONTAINS`, `STARTS_WITH`, `ENDS_WITH`, `GT/GTE/LT/LTE`, `IN`, `NOT_IN`, `BETWEEN`, `IS_NULL`, `IS_NOT_NULL`.
+- 🛠️ **Kotlin DSL builder** — build, modify, and compose filters in code with an infix DSL.
+- 🧬 **Custom type mappers** — support any column type (`BigDecimal`, value classes, custom types …).
+- 🪢 **Unions, joins & computed columns** — map field names to arbitrary Exposed expressions.
+- 🌐 **Ktor-ready** — one-line request parsing; the core is framework-agnostic.
+- 📦 **Zero-magic core** — pure-Kotlin `core` module with no Exposed/Ktor dependency.
+
+## Modules and artifacts
+
+- **`core`** — domain model (`FilterOperator`, `FilterNode`, `FilterRequest`), the `filterRequest { … }` DSL, JSON (de)serialization, and normalization utilities. No Exposed/Ktor dependency.
+- **`jdbc`** — translation of the filter tree into Exposed DSL predicates (`Op<Boolean>`). The main logic module.
+- **`rest`** — Ktor helpers to parse an HTTP JSON body into a `FilterRequest`.
+
+Artifacts on Maven Central (group `ua.wwind.exposed-filters`):
+
+- `ua.wwind.exposed-filters:exposed-filters-core:<version>`
+- `ua.wwind.exposed-filters:exposed-filters-jdbc:<version>`
+- `ua.wwind.exposed-filters:exposed-filters-rest:<version>`
 
 ## Table of Contents
 
 - [Installation](#installation)
 - [Compatibility](#compatibility)
 - [Quick start](#quick-start)
+- [Use cases](#use-cases)
 - [DSL builder for FilterRequest](#dsl-builder-for-filterrequest)
 - [JSON serialization](#json-serialization)
 - [Field naming in filters](#field-naming-in-filters)
 - [Filtering by related entities (references)](#filtering-by-related-entities-references)
 - [Filtering by JSON/JSONB fields](#filtering-by-jsonjsonb-fields)
+- [Case-insensitive matching and indexing](#case-insensitive-matching-and-indexing)
 - [Validation and errors](#validation-and-errors)
 - [JSON request format](#json-request-format)
 - [Supported operators](#supported-operators)
@@ -35,7 +86,6 @@ Type-safe, normalized filter model and utilities for building dynamic queries wi
 - [Custom column type mappers](#custom-column-type-mappers)
 - [Custom expression maps for complex queries](#custom-expression-maps-for-complex-queries)
 - [Example: filtering by date and timestamp](#example-filtering-by-date-and-timestamp)
-- [Why use this](#why-use-this)
 - [CI and Release](#ci-and-release)
 - [License](#license)
 
@@ -45,16 +95,20 @@ Prerequisites: Kotlin 2.3.21, repository `mavenCentral()`.
 
 ```kotlin
 dependencies {
-  implementation("ua.wwind.exposed-filters:exposed-filters-core:1.7.0")
-  implementation("ua.wwind.exposed-filters:exposed-filters-jdbc:1.7.0")
-  implementation("ua.wwind.exposed-filters:exposed-filters-rest:1.7.0")
+  implementation("ua.wwind.exposed-filters:exposed-filters-core:1.8.0")
+  implementation("ua.wwind.exposed-filters:exposed-filters-jdbc:1.8.0")
+  implementation("ua.wwind.exposed-filters:exposed-filters-rest:1.8.0")
 }
 ```
+
+Pick only what you need: `core` alone for the model and DSL, `+ jdbc` to apply filters to Exposed,
+`+ rest` for Ktor request parsing.
 
 ## Compatibility
 
 | Library version | Kotlin | Ktor  | Exposed      |
 |-----------------|--------|-------|--------------|
+| 1.8.0           | 2.3.21 | 3.4.3 | 1.3.0        |
 | 1.7.0           | 2.3.21 | 3.4.3 | 1.3.0        |
 | 1.6.1           | 2.3.20 | 3.4.2 | 1.2.0        |
 | 1.5.0           | 2.3.20 | 3.4.1 | 1.1.1        |
@@ -100,6 +154,26 @@ routing {
     }
 }
 ```
+
+That's it — the client can now send any combination of supported filters and they are translated into a
+safe SQL `WHERE` clause. A request body might look like:
+
+```json
+{
+  "filters": {
+    "name": [{ "op": "CONTAINS", "value": "Al" }],
+    "age":  [{ "op": "GTE", "value": "18" }]
+  }
+}
+```
+
+## Use cases
+
+- **Server-side data grids and tables** — accept per-column filters from the UI and apply them directly to the query. See [JSON request format](#json-request-format).
+- **Admin panels and search forms** — let users build dynamic queries without writing a bespoke endpoint per filter combination.
+- **Multi-tenant scoping** — layer a mandatory `tenantId` predicate on top of a client filter with the [DSL builder](#dsl-builder-for-filterrequest) (`eqIfAbsent`).
+- **Microservice communication** — [serialize a `FilterRequest` to JSON](#json-serialization) and pass it between services or store it in a cache.
+- **Reporting over complex queries** — apply the same filter across unions, joins, and computed/aggregated columns. See [custom expression maps](#custom-expression-maps-for-complex-queries) and [excluding fields](#excluding-fields-from-filters).
 
 ## DSL builder for FilterRequest
 
@@ -414,6 +488,46 @@ Constraints:
 - `CONTAINS`, `STARTS_WITH`, `ENDS_WITH` only work with string JSON values
 - `BETWEEN` is not supported for boolean JSON values
 - Comparison operators (`GT`, `GTE`, `LT`, `LTE`) are not supported for boolean JSON values
+
+## Case-insensitive matching and indexing
+
+String comparisons are tuned through `FilterOptions`, passed as the last argument to `applyFiltersOn` / `applyFilters`.
+
+### Case sensitivity
+
+By default (`caseSensitiveStrings = false`) predicates on `VarChar`/`Text` columns (and string-typed `EntityID`
+and JSON string values) compare both sides in lower case. So `EQ`, `NEQ`, `IN`, `NOT_IN`, `CONTAINS`, `STARTS_WITH`,
+`ENDS_WITH`, `BETWEEN`, and `GT/GTE/LT/LTE` are all case-insensitive.
+
+Opt into case-sensitive comparisons per call:
+
+```kotlin
+Users
+    .selectAll()
+    .applyFiltersOn(Users, filter, FilterOptions(caseSensitiveStrings = true))
+```
+
+### Index-friendly matching with `normalizedStringFields`
+
+Case-insensitive comparisons emit `LOWER(column) = ?`, which a plain B-tree index on `column` cannot serve.
+If you already store certain columns lower-cased (e.g. normalized emails), list those fields in
+`normalizedStringFields`. The library then lowercases only the input value and compares the column raw
+(`column = ?` instead of `LOWER(column) = ?`), so an ordinary index can be used — with no change in behavior
+from the caller's perspective.
+
+```kotlin
+val options = FilterOptions(normalizedStringFields = setOf("email"))
+
+Users
+    .selectAll()
+    .applyFiltersOn(Users, filter, options)
+```
+
+Notes:
+
+- Matching is by exact field name as written in the filter.
+- `normalizedStringFields` is ignored when `caseSensitiveStrings = true`.
+- JSON/JSONB string paths are not affected and keep the `LOWER()` form.
 
 ## Validation and errors
 
@@ -844,12 +958,6 @@ The `example` module contains an `Events` table demonstrating both a date-only f
   }
 }
 ```
-
-## Why use this
-
-- Clear separation: request format → normalized model → SQL predicates.
-- Safer queries by leveraging Exposed DSL.
-- Reusable across endpoints; supports both simple and complex trees of conditions.
 
 ## CI and Release
 
