@@ -95,9 +95,9 @@ Prerequisites: Kotlin 2.3.21, repository `mavenCentral()`.
 
 ```kotlin
 dependencies {
-  implementation("ua.wwind.exposed-filters:exposed-filters-core:1.9.0")
-  implementation("ua.wwind.exposed-filters:exposed-filters-jdbc:1.9.0")
-  implementation("ua.wwind.exposed-filters:exposed-filters-rest:1.9.0")
+  implementation("ua.wwind.exposed-filters:exposed-filters-core:1.9.1")
+  implementation("ua.wwind.exposed-filters:exposed-filters-jdbc:1.9.1")
+  implementation("ua.wwind.exposed-filters:exposed-filters-rest:1.9.1")
 }
 ```
 
@@ -108,7 +108,7 @@ Pick only what you need: `core` alone for the model and DSL, `+ jdbc` to apply f
 
 | Library version | Kotlin | Ktor  | Exposed      |
 |-----------------|--------|-------|--------------|
-| 1.9.0           | 2.3.21 | 3.4.3 | 1.3.0        |
+| 1.9.1           | 2.3.21 | 3.4.3 | 1.3.0        |
 | 1.8.0           | 2.3.21 | 3.4.3 | 1.3.0        |
 | 1.7.0           | 2.3.21 | 3.4.3 | 1.3.0        |
 | 1.6.1           | 2.3.20 | 3.4.2 | 1.2.0        |
@@ -541,19 +541,25 @@ Notes:
 read as a filter body, throwing `FilterRequestParseException`. A misshapen body is a client error, and
 parsing it leniently would drop the client's filter and return an unfiltered result set with `200 OK`.
 
-| Body                                            | Result                        |
-|-------------------------------------------------|-------------------------------|
-| absent, `""`, `{}`, `{"filters":{}}`            | `null` — no filters applied   |
-| `{"filters":{"age":[{"op":"GTE","value":"18"}]}}` | parsed                      |
-| `{"age":{"gte":"18"}}`                          | `FilterRequestParseException` |
-| `{"filters":{...},"sort":"name"}`               | `FilterRequestParseException` |
-| `{"combinator":"XOR",...}`                      | `FilterRequestParseException` |
-| malformed or non-object JSON                     | `FilterRequestParseException` |
+| Body                                              | Result                        |
+|---------------------------------------------------|-------------------------------|
+| absent, `""`, `{}`, `{"filters":{}}`              | `null` — no filters applied   |
+| `{"filters":{"age":[{"op":"GTE","value":"18"}]}}` | parsed                        |
+| `{"filters":{"age":[{"op":"GTE","value":18}]}}`   | parsed — value `"18"`         |
+| `{"age":{"gte":"18"}}`                            | `FilterRequestParseException` |
+| `{"filters":{...},"sort":"name"}`                 | `FilterRequestParseException` |
+| `{"combinator":"XOR",...}`                        | `FilterRequestParseException` |
+| malformed or non-object JSON                      | `FilterRequestParseException` |
 
 Unknown keys are rejected at every level, so the filter body must contain nothing but `filters`,
 `combinator` and `children`. Send pagination, sorting and other parameters outside the filter body —
 as query parameters, or by parsing your own envelope and passing its filter part to
 `parseFilterRequestOrNull()`.
+
+Strictness applies to the *shape* of the body, not to scalar syntax. Filter values are declared as
+strings, but a client may send them typed — `{"op":"GT","value":5}` or `{"op":"EQ","value":true}` —
+and the parser reads any JSON scalar in a value position as its text (`"5"`, `"true"`). An object or
+an array in a value position is still rejected.
 
 `FilterRequestParseException` extends `IllegalArgumentException`, so an application that already maps
 illegal arguments to `400 Bad Request` needs no new handler:
