@@ -38,7 +38,7 @@ The `jdbc` module enables Kotlin context parameters (`-Xcontext-parameters`); se
 
 Understanding the translation pipeline is key:
 
-1. **JSON → `FilterRequest`** (`rest/FilterExtraction.kt`). The parser accepts two shapes — flat (`{ filters: {...} }`) and tree (`{ combinator, children: [...] }`) — and normalizes them. Important normalization rules live in `normalize()` and `toNodeOrNull()`:
+1. **JSON → `FilterRequest`** (`rest/FilterExtraction.kt`). The parser accepts two shapes — flat (`{ filters: {...} }`) and tree (`{ combinator, children: [...] }`) — and normalizes them. **Parsing is strict** (`ignoreUnknownKeys`, `isLenient`, `coerceInputValues` all `false`): a non-blank body that is not a valid filter body throws `FilterRequestParseException`. Do not relax these flags — lenient parsing turns a client mistake into an unfiltered result set with `200 OK`, which is the bug this replaced. A blank body, `{}` and `{"filters":{}}` still mean "no filters" and return `null`. Important normalization rules live in `normalize()` and `toNodeOrNull()`:
    - Empty leaves/groups are stripped.
    - Single-child AND/OR groups collapse to their child.
    - **NOT groups with a single child are preserved** (collapsing would drop the negation).

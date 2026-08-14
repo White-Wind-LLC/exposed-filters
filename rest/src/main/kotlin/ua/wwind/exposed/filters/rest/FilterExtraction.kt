@@ -2,6 +2,7 @@ package ua.wwind.exposed.filters.rest
 
 import io.ktor.server.application.ApplicationCall
 import io.ktor.server.request.receiveNullable
+import kotlinx.serialization.SerializationException
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 import ua.wwind.exposed.filters.core.FieldFilter
@@ -35,11 +36,16 @@ internal data class FilterBodyDto(
     val children: List<FilterNodeDto>? = null,
 )
 
+/**
+ * Strict on purpose: a body that does not match the expected shape must fail loudly instead of
+ * decoding into an empty [FilterBodyDto], which would silently drop the client's filter and return
+ * an unfiltered result set.
+ */
 private val json by lazy {
     Json {
-        ignoreUnknownKeys = true
-        isLenient = true
-        coerceInputValues = true
+        ignoreUnknownKeys = false
+        isLenient = false
+        coerceInputValues = false
     }
 }
 
@@ -51,17 +57,27 @@ public suspend fun ApplicationCall.receiveFilterRequestOrNull(): FilterRequest? 
 /**
  * Parse [FilterRequest] from a raw JSON string.
  *
- * Decodes a [FilterRequest] from the provided JSON text string.
- * Returns null if the string is empty. For invalid JSON, an exception will be thrown.
+ * Returns `null` when the string is blank or when the body carries no predicates
+ * (`{}`, `{"filters":{}}`) — both mean "no filters".
+ *
+ * Parsing is strict: a non-blank body that is not a valid filter body — an unknown key, an unknown
+ * operator or combinator, a wrong shape, malformed JSON — throws [FilterRequestParseException]
+ * rather than degrading into "no filters". Map it to `400 Bad Request`.
  */
 public fun parseFilterRequestOrNull(raw: String): FilterRequest? {
     val text: String = raw.trim()
-    val body: FilterBodyDto? = if (text.isEmpty()) {
-        null
-    } else {
+    if (text.isEmpty()) return null
+    val body: FilterBodyDto = try {
         json.decodeFromString<FilterBodyDto>(text)
+    } catch (e: SerializationException) {
+        throw FilterRequestParseException(
+            "Invalid filter request body: ${e.message}. " +
+                "Expected either {\"filters\":{...}} or {\"combinator\":...,\"children\":[...]}; " +
+                "send an empty body or {} to apply no filters.",
+            e,
+        )
     }
-    return body?.let { buildFilterRequestOrNull(it) }
+    return buildFilterRequestOrNull(body)
 }
 
 private fun buildFilterRequestOrNull(body: FilterBodyDto): FilterRequest? {

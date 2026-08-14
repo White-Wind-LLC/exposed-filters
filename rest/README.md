@@ -9,13 +9,27 @@
 ### Entry point
 
 - `ApplicationCall.receiveFilterRequestOrNull(): FilterRequest?`
-    - Returns `null` if the request body is empty or contains no valid conditions.
-    - Throws `BadRequestException` when both `filters` and `children` are present at the same level in the root request
-      body.
+    - Returns `null` if the request body is empty or contains no conditions (`{}`, `{"filters":{}}`).
+    - Throws `FilterRequestParseException` for any other body it cannot read as a filter body.
+- `parseFilterRequestOrNull(raw: String): FilterRequest?` — the same contract over a raw JSON string.
+
+### Strict parsing
+
+The body is parsed with `ignoreUnknownKeys = false`, `isLenient = false` and `coerceInputValues = false`.
+A body that does not match the expected shape — a shorthand form such as `{"age":{"gte":"18"}}`, a
+misspelled or extra key, an unknown operator or combinator, malformed JSON — throws
+`FilterRequestParseException` instead of decoding into an empty request. Parsing such a body leniently
+would silently apply no filter at all and return an unfiltered result set with `200 OK`.
+
+`FilterRequestParseException` extends `IllegalArgumentException`; map it to `400 Bad Request`.
+
+Because unknown keys are rejected at every level, the filter body may contain only `filters`,
+`combinator` and `children`. Carry pagination and sorting outside it.
 
 ### JSON input formats
 
-Two shapes are supported. Only one of the top-level keys `filters` or `children` may be present.
+Two shapes are supported. `filters` and `children` may both be present at the same level; they are
+combined as children of the node's `combinator`.
 
 - **Flat**
     - Keys: `filters` (required), `combinator` (optional, defaults to `AND`).

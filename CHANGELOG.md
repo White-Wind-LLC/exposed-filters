@@ -2,6 +2,30 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.9.0] - 2026-08-15
+
+- **BREAKING** REST: the filter body is now parsed strictly and a body that is not a valid filter body
+  is rejected instead of being silently treated as "no filters"
+    - Previously a non-empty body that did not match the expected shape — a shorthand form such as
+      `{"documentId":{"eq":"..."}}`, a misspelled key, or any extra key — decoded into an empty request.
+      The endpoint answered `200 OK` with an **unfiltered** result set, so a client mistake degraded into
+      a much wider selection with no error and no warning.
+    - `parseFilterRequestOrNull` and `ApplicationCall.receiveFilterRequestOrNull` now throw the new
+      `FilterRequestParseException` for any non-blank body they cannot read as a filter body.
+    - The parser's `Json` switched from `ignoreUnknownKeys = true`, `isLenient = true`,
+      `coerceInputValues = true` to `false` for all three. Unknown keys are rejected at every level, so
+      the filter body may contain only `filters`, `combinator` and `children` — carry pagination and
+      sorting outside it. An unknown `combinator` value is now an error instead of being coerced to `AND`.
+      Malformed JSON now surfaces as `FilterRequestParseException` rather than a raw `SerializationException`.
+    - An absent or blank body, `{}` and `{"filters":{}}` still mean "no filters" and return `null`.
+    - `FilterRequestParseException` extends `IllegalArgumentException`, so applications that already map
+      illegal arguments to `400 Bad Request` need no new handler.
+    - **Upgrade note**: clients that put extra keys in the filter body, or that send a shape other than
+      the documented one, start receiving `400` instead of an unfiltered page. Check tests that assert
+      only the status code — a green test may have been asserting nothing.
+
+**Full Changelog**: https://github.com/White-Wind-LLC/exposed-filters/compare/v1.8.0...v1.9.0
+
 ## [1.8.0] - 2026-06-11
 
 - JDBC: per-field normalized string comparison
