@@ -95,9 +95,9 @@ Prerequisites: Kotlin 2.3.21, repository `mavenCentral()`.
 
 ```kotlin
 dependencies {
-  implementation("ua.wwind.exposed-filters:exposed-filters-core:1.8.0")
-  implementation("ua.wwind.exposed-filters:exposed-filters-jdbc:1.8.0")
-  implementation("ua.wwind.exposed-filters:exposed-filters-rest:1.8.0")
+  implementation("ua.wwind.exposed-filters:exposed-filters-core:1.9.0")
+  implementation("ua.wwind.exposed-filters:exposed-filters-jdbc:1.9.0")
+  implementation("ua.wwind.exposed-filters:exposed-filters-rest:1.9.0")
 }
 ```
 
@@ -108,6 +108,7 @@ Pick only what you need: `core` alone for the model and DSL, `+ jdbc` to apply f
 
 | Library version | Kotlin | Ktor  | Exposed      |
 |-----------------|--------|-------|--------------|
+| 1.9.0           | 2.3.21 | 3.4.3 | 1.3.0        |
 | 1.8.0           | 2.3.21 | 3.4.3 | 1.3.0        |
 | 1.7.0           | 2.3.21 | 3.4.3 | 1.3.0        |
 | 1.6.1           | 2.3.20 | 3.4.2 | 1.2.0        |
@@ -533,6 +534,37 @@ Notes:
 
 - Requests that reference unknown fields will fail fast with a clear error message, e.g. `Unknown filter field: foo`.
 - In the sample Ktor app, such cases are mapped to HTTP 400 Bad Request via a global `StatusPages` handler.
+
+### Filter body parsing is strict
+
+`receiveFilterRequestOrNull()` and `parseFilterRequestOrNull()` reject any non-blank body they cannot
+read as a filter body, throwing `FilterRequestParseException`. A misshapen body is a client error, and
+parsing it leniently would drop the client's filter and return an unfiltered result set with `200 OK`.
+
+| Body                                            | Result                        |
+|-------------------------------------------------|-------------------------------|
+| absent, `""`, `{}`, `{"filters":{}}`            | `null` — no filters applied   |
+| `{"filters":{"age":[{"op":"GTE","value":"18"}]}}` | parsed                      |
+| `{"age":{"gte":"18"}}`                          | `FilterRequestParseException` |
+| `{"filters":{...},"sort":"name"}`               | `FilterRequestParseException` |
+| `{"combinator":"XOR",...}`                      | `FilterRequestParseException` |
+| malformed or non-object JSON                     | `FilterRequestParseException` |
+
+Unknown keys are rejected at every level, so the filter body must contain nothing but `filters`,
+`combinator` and `children`. Send pagination, sorting and other parameters outside the filter body —
+as query parameters, or by parsing your own envelope and passing its filter part to
+`parseFilterRequestOrNull()`.
+
+`FilterRequestParseException` extends `IllegalArgumentException`, so an application that already maps
+illegal arguments to `400 Bad Request` needs no new handler:
+
+```kotlin
+install(StatusPages) {
+    exception<FilterRequestParseException> { call, cause ->
+        call.respond(HttpStatusCode.BadRequest, mapOf("error" to cause.message))
+    }
+}
+```
 
 ## JSON request format
 
