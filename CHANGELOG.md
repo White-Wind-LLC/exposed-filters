@@ -2,6 +2,23 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.9.1] - 2026-08-15
+
+- **FIX** REST: typed (non-string) filter values parse again
+    - 1.9.0 turned off `isLenient` along with `ignoreUnknownKeys` and `coerceInputValues`. Filter values
+      are declared as `String`, so a body that carries them typed — `{"op":"GT","value":5}`,
+      `{"op":"EQ","value":true}`, `{"op":"IN","values":[1,2]}` — stopped decoding and answered `400`.
+      Clients do send that shape, so this was a regression against 1.8.0.
+    - `isLenient` is back on: any JSON scalar in a value position is read as its text (`5` → `"5"`,
+      `true` → `"true"`). An object or an array in a value position is still rejected.
+    - Everything 1.9.0 added is unchanged. `ignoreUnknownKeys` and `coerceInputValues` stay off, so an
+      unknown key at any level, an unknown `combinator` or `op`, and malformed JSON still throw
+      `FilterRequestParseException`; an absent or blank body, `{}` and `{"filters":{}}` still return `null`.
+    - Trade-off: `isLenient` also accepts relaxed syntax such as unquoted keys and values. That is
+      tolerated — unlike `ignoreUnknownKeys`, it cannot turn a client mistake into an unfiltered result set.
+
+**Full Changelog**: https://github.com/White-Wind-LLC/exposed-filters/compare/v1.9.0...v1.9.1
+
 ## [1.9.0] - 2026-08-15
 
 - **BREAKING** REST: the filter body is now parsed strictly and a body that is not a valid filter body

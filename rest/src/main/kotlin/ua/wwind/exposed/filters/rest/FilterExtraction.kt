@@ -37,14 +37,23 @@ internal data class FilterBodyDto(
 )
 
 /**
- * Strict on purpose: a body that does not match the expected shape must fail loudly instead of
+ * Strict about *shape*, lenient about *scalar syntax*.
+ *
+ * [Json.ignoreUnknownKeys] and [Json.coerceInputValues] stay off: a body that does not match the
+ * expected shape — an unknown key, an unknown operator or combinator — must fail loudly instead of
  * decoding into an empty [FilterBodyDto], which would silently drop the client's filter and return
  * an unfiltered result set.
+ *
+ * [Json.isLenient] stays on: filter values are declared as `String`, but clients legitimately send
+ * them typed (`{"op":"GT","value":5}`, `{"op":"EQ","value":true}`). Lenient parsing reads any JSON
+ * scalar in a value position as its text; without it those bodies would be rejected with 400.
+ * The cost is that relaxed syntax such as unquoted keys is also accepted — a tolerated trade-off,
+ * since it does not turn a client mistake into an unfiltered result set.
  */
 private val json by lazy {
     Json {
         ignoreUnknownKeys = false
-        isLenient = false
+        isLenient = true
         coerceInputValues = false
     }
 }

@@ -1,5 +1,6 @@
 package ua.wwind.exposed.filters.rest
 
+import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertNotNull
 import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertTrue
@@ -7,6 +8,7 @@ import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.assertThrows
 import ua.wwind.exposed.filters.core.FilterGroup
 import ua.wwind.exposed.filters.core.FilterLeaf
+import ua.wwind.exposed.filters.core.FilterOperator
 
 /**
  * Verifies that a non-empty filter body which does not match the expected shape is rejected
@@ -87,13 +89,6 @@ class FilterExtractionStrictTest {
     fun `unknown operator is rejected`() {
         assertThrows<FilterRequestParseException> {
             parseFilterRequestOrNull("""{"filters":{"status":[{"op":"MATCHES","value":"A"}]}}""")
-        }
-    }
-
-    @Test
-    fun `unquoted json is rejected`() {
-        assertThrows<FilterRequestParseException> {
-            parseFilterRequestOrNull("""{filters:{status:[{op:EQ,value:A}]}}""")
         }
     }
 
@@ -190,5 +185,80 @@ class FilterExtractionStrictTest {
         )
 
         assertNotNull(parsed)
+    }
+
+    // --- Typed (non-string) scalar values ------------------------------------------------------
+    //
+    // Filter values are declared as String, but real clients send numbers and booleans unquoted.
+    // Lenient parsing reads any JSON scalar in a value position as its text, so these must parse
+    // rather than 400. See `isLenient` in FilterExtraction.kt.
+
+    @Test
+    fun `numeric value is read as its text`() {
+        val parsed = parseFilterRequestOrNull("""{"filters":{"pickingOrder":[{"op":"GT","value":5}]}}""")
+
+        assertNotNull(parsed)
+        val predicate = (parsed!!.root as FilterLeaf).predicates.single()
+        assertEquals("pickingOrder", predicate.field)
+        assertEquals(FilterOperator.GT, predicate.operator)
+        assertEquals(listOf("5"), predicate.values)
+    }
+
+    @Test
+    fun `boolean value is read as its text`() {
+        val parsed = parseFilterRequestOrNull("""{"combinator":"AND","filters":{"supplier":[{"op":"EQ","value":true}]}}""")
+
+        assertNotNull(parsed)
+        val predicate = (parsed!!.root as FilterLeaf).predicates.single()
+        assertEquals(listOf("true"), predicate.values)
+    }
+
+    @Test
+    fun `numeric values list is read as text`() {
+        val parsed = parseFilterRequestOrNull("""{"filters":{"id":[{"op":"IN","values":[1,2]}]}}""")
+
+        assertNotNull(parsed)
+        val predicate = (parsed!!.root as FilterLeaf).predicates.single()
+        assertEquals(FilterOperator.IN, predicate.operator)
+        assertEquals(listOf("1", "2"), predicate.values)
+    }
+
+    @Test
+    fun `decimal value is read as its text`() {
+        val parsed = parseFilterRequestOrNull("""{"filters":{"weight":[{"op":"LTE","value":1.5}]}}""")
+
+        assertNotNull(parsed)
+        val predicate = (parsed!!.root as FilterLeaf).predicates.single()
+        assertEquals(listOf("1.5"), predicate.values)
+    }
+
+    @Test
+    fun `typed value inside a nested child is read as its text`() {
+        val parsed = parseFilterRequestOrNull(
+            """
+            {
+              "combinator": "OR",
+              "children": [
+                {"filters":{"pickingOrder":[{"op":"GT","value":5}]}},
+                {"filters":{"supplier":[{"op":"EQ","value":false}]}}
+              ]
+            }
+            """.trimIndent()
+        )
+
+        assertNotNull(parsed)
+        val group = parsed!!.root as FilterGroup
+        val values = group.children.flatMap { (it as FilterLeaf).predicates }.flatMap { it.values }
+        assertEquals(listOf("5", "false"), values)
+    }
+
+    @Test
+    fun `a non-scalar value is still rejected`() {
+        assertThrows<FilterRequestParseException> {
+            parseFilterRequestOrNull("""{"filters":{"status":[{"op":"EQ","value":{"eq":"A"}}]}}""")
+        }
+        assertThrows<FilterRequestParseException> {
+            parseFilterRequestOrNull("""{"filters":{"status":[{"op":"EQ","value":["A"]}]}}""")
+        }
     }
 }
