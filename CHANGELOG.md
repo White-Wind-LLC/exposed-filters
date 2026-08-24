@@ -2,6 +2,33 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.10.0] - 2026-08-25
+
+- JDBC: enums are filterable in every Exposed storage form
+    - Only `enumerationByName()` columns could be filtered. `enumeration()` (ordinal storage) and
+      `customEnumeration()` fell through to "Unsupported equality/IN for field '...'", so a field
+      declared either way was simply unfilterable. `EQ`/`NEQ`/`IN`/`NOT_IN`, array elements and the
+      comparison operators now route through a single resolver for all three forms.
+    - **Clients never send the database representation.** A value is accepted as the constant `name`
+      (exact match, case sensitive) or as its `ordinal`, name first — identically for the three forms.
+      A `customEnumeration()` storing one-letter codes matches on `"PENDING"` and issues `'P'` to the
+      database. Predicates hand Exposed the enum constant and let the column type's own
+      `notNullValueToDB` produce the stored value.
+    - `CustomEnumerationColumnType` exposes no enum class, and its `fromDb`/`toDb` lambdas are
+      `invokedynamic` with fully erased signatures. The class is recovered from the Kotlin property
+      declaring the column (`val status: Column<Status>` → `Status`), unwrapping `Column<List<Status>>`
+      for array columns and resolving `Alias` columns through their delegate. The result is memoized
+      per column-type instance. When the class genuinely cannot be determined — a computed expression
+      passed through `applyFilters(map)` rather than a real column — the filter fails with an error
+      pointing at `ColumnValueMapper` instead of falling back to the database representation.
+    - `GT`/`GTE`/`LT`/`LTE`/`BETWEEN` on enums are enabled only for `EnumerationColumnType`, where SQL
+      ordering equals declaration order. On name-stored and custom columns they fail with an
+      explanation rather than silently ordering by the stored representation.
+    - An unknown value now fails with an `IllegalArgumentException` naming the field and listing the
+      allowed constants, replacing a bare `NoSuchElementException`.
+
+**Full Changelog**: https://github.com/White-Wind-LLC/exposed-filters/compare/v1.9.1...v1.10.0
+
 ## [1.9.1] - 2026-08-15
 
 - **FIX** REST: typed (non-string) filter values parse again

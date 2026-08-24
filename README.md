@@ -95,9 +95,9 @@ Prerequisites: Kotlin 2.3.21, repository `mavenCentral()`.
 
 ```kotlin
 dependencies {
-  implementation("ua.wwind.exposed-filters:exposed-filters-core:1.9.1")
-  implementation("ua.wwind.exposed-filters:exposed-filters-jdbc:1.9.1")
-  implementation("ua.wwind.exposed-filters:exposed-filters-rest:1.9.1")
+  implementation("ua.wwind.exposed-filters:exposed-filters-core:1.10.0")
+  implementation("ua.wwind.exposed-filters:exposed-filters-jdbc:1.10.0")
+  implementation("ua.wwind.exposed-filters:exposed-filters-rest:1.10.0")
 }
 ```
 
@@ -108,6 +108,7 @@ Pick only what you need: `core` alone for the model and DSL, `+ jdbc` to apply f
 
 | Library version | Kotlin | Ktor  | Exposed      |
 |-----------------|--------|-------|--------------|
+| 1.10.0          | 2.3.21 | 3.4.3 | 1.3.0        |
 | 1.9.1           | 2.3.21 | 3.4.3 | 1.3.0        |
 | 1.8.0           | 2.3.21 | 3.4.3 | 1.3.0        |
 | 1.7.0           | 2.3.21 | 3.4.3 | 1.3.0        |
