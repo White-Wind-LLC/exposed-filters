@@ -687,7 +687,15 @@ Automatic conversion from JSON strings to column types:
 - String (`VarChar`, `Text`) with `LIKE` support for the string operators
 - UUID
 - Boolean (`toBooleanStrict()`: only "true"/"false")
-- Enums (by enum constant `name`)
+- Enums, in every storage form Exposed offers (`enumeration()`, `enumerationByName()`, `customEnumeration()`).
+  A filter value is accepted either as the enum constant `name` (exact match, case sensitive) or as its `ordinal`;
+  the name is tried first. The library resolves the value to the enum constant and lets the column type convert it,
+  so the stored representation is always respected. A value that is neither a known name nor a valid ordinal is
+  rejected with an error naming the field and listing the allowed values.
+    - `customEnumeration()` columns are the exception: they keep no reference to the enum class, only the
+      `fromDb`/`toDb` lambdas, so the constants cannot be enumerated. Such a column accepts exactly what its own
+      `fromDb` accepts - names for a name-based transformation, numbers for an ordinal-based one. Register a
+      `ColumnValueMapper` to accept both forms there.
 - Date and time
     - Date-only (LocalDate): supports both Java `java.time.LocalDate` and `kotlinx.datetime.LocalDate` backed columns
     - Timestamp/DateTime: supports `LocalDateTime`, `Instant` (including `kotlin.time.Instant`), and SQL `TIMESTAMP`
@@ -699,7 +707,10 @@ Automatic conversion from JSON strings to column types:
 Operator constraints:
 
 - `LIKE`-style operators only for string columns.
-- `BETWEEN` requires exactly two values; not supported for UUID/Enum/Boolean.
+- `BETWEEN` requires exactly two values; not supported for UUID/Boolean.
+- `BETWEEN` and `GT`/`GTE`/`LT`/`LTE` on enum columns are supported only for `enumeration()` (ordinal storage), where
+  SQL ordering matches the enum's declaration order. On `enumerationByName()` and `customEnumeration()` columns they
+  are rejected, because the database would compare the stored representation instead - use `IN` with explicit values.
 - `IN` requires non-empty values; `NOT_IN` with an empty `values` array is treated as a no-op (ignored).
 - `IN` and `NOT_IN` are supported for scalar and array fields.
 - Date/time operators: `EQ`, `IN`, `BETWEEN`, `GT`, `GTE`, `LT`, `LTE`, `IS_NULL`, `IS_NOT_NULL` are supported for date

@@ -77,7 +77,11 @@ internal fun parseArrayElementValue(
         is UUIDColumnType -> java.util.UUID.fromString(raw)
         is UuidColumnType -> Uuid.parse(raw)
         is BooleanColumnType -> raw.toBooleanStrict()
-        is org.jetbrains.exposed.v1.core.EnumerationNameColumnType<*> -> enumValueOf(delegate, raw)
+        is org.jetbrains.exposed.v1.core.EnumerationNameColumnType<*>,
+        is org.jetbrains.exposed.v1.core.EnumerationColumnType<*>,
+        is org.jetbrains.exposed.v1.core.CustomEnumerationColumnType<*> ->
+            resolveEnumValue(delegate, raw, fieldName)
+
         else -> error("Unsupported array element type for field '$fieldName'")
     }
 }

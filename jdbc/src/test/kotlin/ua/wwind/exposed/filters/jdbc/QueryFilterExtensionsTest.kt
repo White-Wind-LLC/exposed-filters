@@ -5,6 +5,7 @@ package ua.wwind.exposed.filters.jdbc
 import kotlinx.datetime.LocalDate
 import org.jetbrains.exposed.v1.core.Column
 import org.jetbrains.exposed.v1.core.ColumnType
+import org.jetbrains.exposed.v1.core.EnumerationColumnType
 import org.jetbrains.exposed.v1.core.Table
 import org.jetbrains.exposed.v1.core.java.UUIDColumnType
 import org.jetbrains.exposed.v1.datetime.date
@@ -98,6 +99,32 @@ enum class Status { ACTIVE, INACTIVE, PENDING }
 object TestEnumTable : Table("test_enum") {
     val id: Column<Int> = integer("id").autoIncrement()
     val status: Column<Status> = enumerationByName<Status>("status", 20)
+    override val primaryKey = PrimaryKey(id)
+}
+
+/**
+ * Same logical enum stored three different ways, so that filters can be checked against every
+ * storage form Exposed supports: by name, by ordinal, and through a custom transformation.
+ */
+object TestEnumStorageTable : Table("test_enum_storage") {
+    val id: Column<Int> = integer("id").autoIncrement()
+    val byName: Column<Status> = enumerationByName<Status>("by_name", 20)
+    val byOrdinal: Column<Status> = enumeration<Status>("by_ordinal")
+    val byCustom: Column<Status> =
+        customEnumeration(
+            "by_custom",
+            "VARCHAR(20)",
+            { value -> Status.valueOf(value as String) },
+            { it.name },
+        )
+    val byCustomOrdinal: Column<Status> =
+        customEnumeration(
+            "by_custom_ordinal",
+            "INT",
+            { value -> Status.entries[(value as Number).toInt()] },
+            { it.ordinal },
+        )
+    val statuses: Column<List<Status>> = array("statuses", EnumerationColumnType(Status::class))
     override val primaryKey = PrimaryKey(id)
 }
 
@@ -1426,6 +1453,198 @@ class QueryFilterExtensionsTest {
                 assertEquals(3, results.size)
                 assertTrue(results.none { it[TestEnumTable.status] == Status.INACTIVE })
             }
+        }
+    }
+
+    // ---------------------------------------------------------
+    // Tests for enum storage forms (name / ordinal / custom transformation)
+    // ---------------------------------------------------------
+    @Nested
+    inner class EnumStorageFormTests {
+        @BeforeEach
+        fun setUpData() {
+            transaction {
+                SchemaUtils.create(TestEnumStorageTable)
+                listOf(
+                    Status.ACTIVE to listOf(Status.ACTIVE),
+                    Status.ACTIVE to listOf(Status.ACTIVE, Status.PENDING),
+                    Status.INACTIVE to listOf(Status.INACTIVE),
+                    Status.PENDING to listOf(Status.PENDING),
+                ).forEach { (status, tags) ->
+                    TestEnumStorageTable.insert {
+                        it[byName] = status
+                        it[byOrdinal] = status
+                        it[byCustom] = status
+                        it[byCustomOrdinal] = status
+                        it[statuses] = tags
+                    }
+                }
+            }
+        }
+
+        @AfterEach
+        fun cleanUp() {
+            transaction { SchemaUtils.drop(TestEnumStorageTable) }
+        }
+
+        private fun idsFor(
+            field: String,
+            operator: FilterOperator,
+            values: List<String>,
+        ): List<Int> {
+            val filter = FilterRequest(FilterLeaf(listOf(FieldFilter(field, operator, values))))
+            return transaction {
+                TestEnumStorageTable
+                    .selectAll()
+                    .applyFiltersOn(TestEnumStorageTable, filter)
+                    .map { it[TestEnumStorageTable.id] }
+            }
+        }
+
+        private fun failureFor(
+            field: String,
+            operator: FilterOperator,
+            values: List<String>,
+        ): Throwable = assertThrows(RuntimeException::class.java) { idsFor(field, operator, values) }
+
+        @Test
+        fun `EQ by enum name resolves for an ordinal-stored column`() {
+            assertEquals(listOf(3), idsFor("byOrdinal", FilterOperator.EQ, listOf("INACTIVE")))
+        }
+
+        @Test
+        fun `EQ by ordinal resolves for an ordinal-stored column`() {
+            assertEquals(listOf(3), idsFor("byOrdinal", FilterOperator.EQ, listOf("1")))
+        }
+
+        @Test
+        fun `EQ by enum name resolves for a custom-stored column`() {
+            assertEquals(listOf(4), idsFor("byCustom", FilterOperator.EQ, listOf("PENDING")))
+        }
+
+        @Test
+        fun `EQ by ordinal resolves for an ordinal-based custom column`() {
+            assertEquals(listOf(4), idsFor("byCustomOrdinal", FilterOperator.EQ, listOf("2")))
+        }
+
+        @Test
+        fun `EQ by enum name is rejected for an ordinal-based custom column`() {
+            val error = failureFor("byCustomOrdinal", FilterOperator.EQ, listOf("PENDING"))
+
+            assertTrue(error is IllegalArgumentException, "expected IllegalArgumentException, got $error")
+            assertTrue(
+                error.message.orEmpty().contains("custom enum transformation"),
+                "message should point at the custom transformation: ${error.message}",
+            )
+        }
+
+        @Test
+        fun `EQ by ordinal is rejected for a name-based custom column`() {
+            // A custom transformation is the only thing that knows how to read the stored value, and a
+            // name-based one cannot interpret an ordinal. Register a ColumnValueMapper to accept both.
+            val error = failureFor("byCustom", FilterOperator.EQ, listOf("2"))
+
+            assertTrue(error is IllegalArgumentException, "expected IllegalArgumentException, got $error")
+            assertTrue(
+                error.message.orEmpty().contains("custom enum transformation"),
+                "message should point at the custom transformation: ${error.message}",
+            )
+        }
+
+        @Test
+        fun `EQ by ordinal resolves for a name-stored column`() {
+            assertEquals(listOf(1, 2), idsFor("byName", FilterOperator.EQ, listOf("0")))
+        }
+
+        @Test
+        fun `NEQ by ordinal resolves for an ordinal-stored column`() {
+            assertEquals(listOf(1, 2, 4), idsFor("byOrdinal", FilterOperator.NEQ, listOf("1")))
+        }
+
+        @Test
+        fun `IN accepts names and ordinals in the same list`() {
+            assertEquals(listOf(1, 2, 4), idsFor("byOrdinal", FilterOperator.IN, listOf("ACTIVE", "2")))
+        }
+
+        @Test
+        fun `NOT_IN accepts ordinals for a name-stored column`() {
+            assertEquals(listOf(3, 4), idsFor("byName", FilterOperator.NOT_IN, listOf("0")))
+        }
+
+        @Test
+        fun `unknown enum name is rejected with field name and allowed values`() {
+            val error = failureFor("byOrdinal", FilterOperator.EQ, listOf("ACTIVEE"))
+
+            assertTrue(error is IllegalArgumentException, "expected IllegalArgumentException, got $error")
+            val message = error.message.orEmpty()
+            assertTrue(message.contains("byOrdinal"), "message should name the field: $message")
+            assertTrue(message.contains("ACTIVEE"), "message should quote the bad value: $message")
+            assertTrue(message.contains("ACTIVE, INACTIVE, PENDING"), "message should list constants: $message")
+        }
+
+        @Test
+        fun `unknown enum name is rejected for a custom-stored column`() {
+            val error = failureFor("byCustom", FilterOperator.EQ, listOf("ACTIVEE"))
+
+            assertTrue(error is IllegalArgumentException, "expected IllegalArgumentException, got $error")
+            assertTrue(error.message.orEmpty().contains("byCustom"), "message should name the field: ${error.message}")
+        }
+
+        @Test
+        fun `ordinal outside the enum range is rejected`() {
+            val error = failureFor("byOrdinal", FilterOperator.EQ, listOf("7"))
+
+            assertTrue(error is IllegalArgumentException, "expected IllegalArgumentException, got $error")
+            assertTrue(error.message.orEmpty().contains("byOrdinal"), "message should name the field: ${error.message}")
+        }
+
+        @Test
+        fun `enum name matching stays case sensitive`() {
+            val error = failureFor("byOrdinal", FilterOperator.EQ, listOf("active"))
+
+            assertTrue(error is IllegalArgumentException, "expected IllegalArgumentException, got $error")
+        }
+
+        @Test
+        fun `GT compares by declaration order on an ordinal-stored column`() {
+            assertEquals(listOf(3, 4), idsFor("byOrdinal", FilterOperator.GT, listOf("ACTIVE")))
+        }
+
+        @Test
+        fun `LTE compares by declaration order on an ordinal-stored column`() {
+            assertEquals(listOf(1, 2, 3), idsFor("byOrdinal", FilterOperator.LTE, listOf("1")))
+        }
+
+        @Test
+        fun `BETWEEN spans declaration order on an ordinal-stored column`() {
+            assertEquals(
+                listOf(1, 2, 3),
+                idsFor("byOrdinal", FilterOperator.BETWEEN, listOf("ACTIVE", "INACTIVE")),
+            )
+        }
+
+        @Test
+        fun `GT is rejected for a name-stored column with an explanatory message`() {
+            val error = failureFor("byName", FilterOperator.GT, listOf("ACTIVE"))
+
+            val message = error.message.orEmpty()
+            assertTrue(message.contains("byName"), "message should name the field: $message")
+            assertTrue(message.contains("declaration order"), "message should explain why: $message")
+        }
+
+        @Test
+        fun `BETWEEN is rejected for a name-stored column with an explanatory message`() {
+            val error = failureFor("byName", FilterOperator.BETWEEN, listOf("ACTIVE", "PENDING"))
+
+            val message = error.message.orEmpty()
+            assertTrue(message.contains("byName"), "message should name the field: $message")
+            assertTrue(message.contains("declaration order"), "message should explain why: $message")
+        }
+
+        @Test
+        fun `array of enums resolves both names and ordinals`() {
+            assertEquals(listOf(2, 4), idsFor("statuses", FilterOperator.IN, listOf("2")))
+            assertEquals(listOf(1, 2), idsFor("statuses", FilterOperator.IN, listOf("ACTIVE")))
         }
     }
 
