@@ -3,8 +3,10 @@ package ua.wwind.exposed.filters.jdbc
 import org.jetbrains.exposed.v1.core.ArrayColumnType
 import org.jetbrains.exposed.v1.core.BooleanColumnType
 import org.jetbrains.exposed.v1.core.Column
+import org.jetbrains.exposed.v1.core.CustomEnumerationColumnType
 import org.jetbrains.exposed.v1.core.DoubleColumnType
 import org.jetbrains.exposed.v1.core.EntityIDColumnType
+import org.jetbrains.exposed.v1.core.EnumerationColumnType
 import org.jetbrains.exposed.v1.core.EnumerationNameColumnType
 import org.jetbrains.exposed.v1.core.ExpressionWithColumnType
 import org.jetbrains.exposed.v1.core.IntegerColumnType
@@ -148,8 +150,8 @@ internal fun eqValue(
         is UUIDColumnType -> (expr as ExpressionWithColumnType<java.util.UUID>).eq(java.util.UUID.fromString(raw))
         is UuidColumnType -> (expr as ExpressionWithColumnType<Uuid>).eq(Uuid.parse(raw))
         is BooleanColumnType -> (expr as ExpressionWithColumnType<Boolean>).eq(raw.toBooleanStrict())
-        is EnumerationNameColumnType<*> -> {
-            val enumValue = enumValueOf(expr, raw)
+        is EnumerationNameColumnType<*>, is EnumerationColumnType<*>, is CustomEnumerationColumnType<*> -> {
+            val enumValue = resolveEnumValue(expr, expr.columnType, raw, fieldName)
             @Suppress("UNCHECKED_CAST")
             (expr as ExpressionWithColumnType<Enum<*>>).eq(enumValue)
         }
@@ -215,9 +217,10 @@ internal fun inListValue(
         is UUIDColumnType -> (expr as ExpressionWithColumnType<java.util.UUID>).inList(raws.map(java.util.UUID::fromString))
         is UuidColumnType -> (expr as ExpressionWithColumnType<Uuid>).inList(raws.map(Uuid::parse))
         is BooleanColumnType -> (expr as ExpressionWithColumnType<Boolean>).inList(raws.map(String::toBooleanStrict))
-        is EnumerationNameColumnType<*> -> {
+        is EnumerationNameColumnType<*>, is EnumerationColumnType<*>, is CustomEnumerationColumnType<*> -> {
+            val enumValues = raws.map { resolveEnumValue(expr, expr.columnType, it, fieldName) }
             @Suppress("UNCHECKED_CAST")
-            (expr as ExpressionWithColumnType<Enum<*>>).inList(raws.map { enumValueOf(expr, it) })
+            (expr as ExpressionWithColumnType<Enum<*>>).inList(enumValues)
         }
 
         else -> error("Unsupported IN for field '$fieldName'")
@@ -286,21 +289,19 @@ internal fun betweenValues(
                 else -> stringExpr.lowerCase().between(from.lowercase(), to.lowercase())
             }
         }
+        is EnumerationColumnType<*> -> {
+            val left = resolveEnumValue(expr, expr.columnType, from, fieldName)
+            val right = resolveEnumValue(expr, expr.columnType, to, fieldName)
+            @Suppress("UNCHECKED_CAST")
+            (expr as ExpressionWithColumnType<Comparable<Any>>).between(
+                left as Comparable<Any>,
+                right as Comparable<Any>
+            )
+        }
+
+        is EnumerationNameColumnType<*>, is CustomEnumerationColumnType<*> ->
+            enumComparisonNotSupported("BETWEEN", fieldName)
+
         else -> error("Unsupported BETWEEN for field '$fieldName'")
     }
-}
-
-/**
- * Enum value resolution by name.
- */
-@Suppress("UNCHECKED_CAST")
-internal fun enumValueOf(expr: ExpressionWithColumnType<*>, name: String): Enum<*> {
-    val type = expr.columnType as EnumerationNameColumnType<*>
-    return enumValueOf(type, name)
-}
-
-@Suppress("UNCHECKED_CAST")
-internal fun enumValueOf(type: EnumerationNameColumnType<*>, name: String): Enum<*> {
-    val constants = type.klass.java.enumConstants as Array<out Enum<*>>
-    return constants.first { it.name == name }
 }
