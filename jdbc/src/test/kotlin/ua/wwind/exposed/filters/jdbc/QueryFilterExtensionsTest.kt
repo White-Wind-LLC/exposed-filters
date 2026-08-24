@@ -7,6 +7,7 @@ import org.jetbrains.exposed.v1.core.Column
 import org.jetbrains.exposed.v1.core.ColumnType
 import org.jetbrains.exposed.v1.core.EnumerationColumnType
 import org.jetbrains.exposed.v1.core.Table
+import org.jetbrains.exposed.v1.core.alias
 import org.jetbrains.exposed.v1.core.java.UUIDColumnType
 import org.jetbrains.exposed.v1.datetime.date
 import org.jetbrains.exposed.v1.datetime.timestamp
@@ -123,6 +124,13 @@ object TestEnumStorageTable : Table("test_enum_storage") {
             "INT",
             { value -> Status.entries[(value as Number).toInt()] },
             { it.ordinal },
+        )
+    val byCustomCode: Column<Status> =
+        customEnumeration(
+            "by_custom_code",
+            "VARCHAR(1)",
+            { value -> Status.entries.first { it.name.startsWith(value as String) } },
+            { it.name.take(1) },
         )
     val statuses: Column<List<Status>> = array("statuses", EnumerationColumnType(Status::class))
     override val primaryKey = PrimaryKey(id)
@@ -1476,6 +1484,7 @@ class QueryFilterExtensionsTest {
                         it[byOrdinal] = status
                         it[byCustom] = status
                         it[byCustomOrdinal] = status
+                        it[byCustomCode] = status
                         it[statuses] = tags
                     }
                 }
@@ -1523,31 +1532,58 @@ class QueryFilterExtensionsTest {
         }
 
         @Test
+        fun `EQ by ordinal resolves for a name-based custom column`() {
+            assertEquals(listOf(4), idsFor("byCustom", FilterOperator.EQ, listOf("2")))
+        }
+
+        @Test
+        fun `EQ by enum name resolves for an ordinal-based custom column`() {
+            assertEquals(listOf(4), idsFor("byCustomOrdinal", FilterOperator.EQ, listOf("PENDING")))
+        }
+
+        @Test
         fun `EQ by ordinal resolves for an ordinal-based custom column`() {
             assertEquals(listOf(4), idsFor("byCustomOrdinal", FilterOperator.EQ, listOf("2")))
         }
 
         @Test
-        fun `EQ by enum name is rejected for an ordinal-based custom column`() {
-            val error = failureFor("byCustomOrdinal", FilterOperator.EQ, listOf("PENDING"))
-
-            assertTrue(error is IllegalArgumentException, "expected IllegalArgumentException, got $error")
-            assertTrue(
-                error.message.orEmpty().contains("custom enum transformation"),
-                "message should point at the custom transformation: ${error.message}",
-            )
+        fun `a custom column takes names and ordinals, never its stored representation`() {
+            // by_custom_code stores 'A' / 'I' / 'P'. The client sends what it sends everywhere else,
+            // and the column's own toDb produces the stored code.
+            assertEquals(listOf(4), idsFor("byCustomCode", FilterOperator.EQ, listOf("PENDING")))
+            assertEquals(listOf(4), idsFor("byCustomCode", FilterOperator.EQ, listOf("2")))
+            assertEquals(listOf(1, 2), idsFor("byCustomCode", FilterOperator.IN, listOf("ACTIVE")))
         }
 
         @Test
-        fun `EQ by ordinal is rejected for a name-based custom column`() {
-            // A custom transformation is the only thing that knows how to read the stored value, and a
-            // name-based one cannot interpret an ordinal. Register a ColumnValueMapper to accept both.
-            val error = failureFor("byCustom", FilterOperator.EQ, listOf("2"))
+        fun `a custom column resolves through an alias`() {
+            // An aliased column is a separate instance owned by the alias, so the enum class has to be
+            // found through the table the alias delegates to.
+            val aliased = TestEnumStorageTable.alias("t")
+            val filter =
+                FilterRequest(
+                    FilterLeaf(listOf(FieldFilter("status", FilterOperator.EQ, listOf("PENDING")))),
+                )
+
+            transaction {
+                val ids =
+                    aliased
+                        .selectAll()
+                        .applyFilters(mapOf("status" to aliased[TestEnumStorageTable.byCustomCode]), filter)
+                        .map { it[aliased[TestEnumStorageTable.id]] }
+
+                assertEquals(listOf(4), ids)
+            }
+        }
+
+        @Test
+        fun `a custom column rejects its stored representation`() {
+            val error = failureFor("byCustomCode", FilterOperator.EQ, listOf("P"))
 
             assertTrue(error is IllegalArgumentException, "expected IllegalArgumentException, got $error")
             assertTrue(
-                error.message.orEmpty().contains("custom enum transformation"),
-                "message should point at the custom transformation: ${error.message}",
+                error.message.orEmpty().contains("ACTIVE, INACTIVE, PENDING"),
+                "message should list the constants: ${error.message}",
             )
         }
 
@@ -1587,7 +1623,9 @@ class QueryFilterExtensionsTest {
             val error = failureFor("byCustom", FilterOperator.EQ, listOf("ACTIVEE"))
 
             assertTrue(error is IllegalArgumentException, "expected IllegalArgumentException, got $error")
-            assertTrue(error.message.orEmpty().contains("byCustom"), "message should name the field: ${error.message}")
+            val message = error.message.orEmpty()
+            assertTrue(message.contains("byCustom"), "message should name the field: $message")
+            assertTrue(message.contains("ACTIVE, INACTIVE, PENDING"), "message should list constants: $message")
         }
 
         @Test

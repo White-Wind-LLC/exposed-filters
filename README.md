@@ -688,14 +688,15 @@ Automatic conversion from JSON strings to column types:
 - UUID
 - Boolean (`toBooleanStrict()`: only "true"/"false")
 - Enums, in every storage form Exposed offers (`enumeration()`, `enumerationByName()`, `customEnumeration()`).
-  A filter value is accepted either as the enum constant `name` (exact match, case sensitive) or as its `ordinal`;
-  the name is tried first. The library resolves the value to the enum constant and lets the column type convert it,
-  so the stored representation is always respected. A value that is neither a known name nor a valid ordinal is
-  rejected with an error naming the field and listing the allowed values.
-    - `customEnumeration()` columns are the exception: they keep no reference to the enum class, only the
-      `fromDb`/`toDb` lambdas, so the constants cannot be enumerated. Such a column accepts exactly what its own
-      `fromDb` accepts - names for a name-based transformation, numbers for an ordinal-based one. Register a
-      `ColumnValueMapper` to accept both forms there.
+  A filter value is always the enum constant `name` (exact match, case sensitive) or its `ordinal`, whichever storage
+  form the column happens to use; the name is tried first. Clients never send the stored representation - the library
+  resolves the value to the enum constant and the column type converts it, so a `customEnumeration()` that stores
+  one-letter codes still matches on `"PENDING"` and issues `'P'` to the database. A value that is neither a known name
+  nor a valid ordinal is rejected with an error naming the field and listing the allowed values.
+    - `customEnumeration()` does not expose its enum class, so the class is read from the Kotlin property declaring the
+      column (`val status: Column<Status>`). That covers table columns, including aliased ones. If you route such a
+      column through `applyFilters()` as a computed expression rather than a column, the class cannot be found and the
+      filter fails with an error - register a `ColumnValueMapper` for that case.
 - Date and time
     - Date-only (LocalDate): supports both Java `java.time.LocalDate` and `kotlinx.datetime.LocalDate` backed columns
     - Timestamp/DateTime: supports `LocalDateTime`, `Instant` (including `kotlin.time.Instant`), and SQL `TIMESTAMP`

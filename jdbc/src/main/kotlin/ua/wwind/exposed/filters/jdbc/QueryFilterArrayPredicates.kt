@@ -39,7 +39,7 @@ internal fun arrayPredicateFor(
     @Suppress("UNCHECKED_CAST")
     val arrayExpr = expr as ExpressionWithColumnType<List<Any>>
     val containsOps = filter.values.map { raw ->
-        val parsed = parseArrayElementValue(delegate, raw, fieldName)
+        val parsed = parseArrayElementValue(expr, delegate, raw, fieldName)
         @Suppress("UNCHECKED_CAST")
         (LiteralOp(delegate as IColumnType<Any>, parsed) eq anyFrom(arrayExpr))
     }
@@ -59,6 +59,7 @@ internal fun arrayPredicateFor(
 @OptIn(ExperimentalUuidApi::class)
 context(mappersModule: ColumnMappersModule?)
 internal fun parseArrayElementValue(
+    expr: ExpressionWithColumnType<*>,
     delegate: IColumnType<*>,
     raw: String,
     fieldName: String
@@ -80,7 +81,7 @@ internal fun parseArrayElementValue(
         is org.jetbrains.exposed.v1.core.EnumerationNameColumnType<*>,
         is org.jetbrains.exposed.v1.core.EnumerationColumnType<*>,
         is org.jetbrains.exposed.v1.core.CustomEnumerationColumnType<*> ->
-            resolveEnumValue(delegate, raw, fieldName)
+            resolveEnumValue(expr, delegate, raw, fieldName)
 
         else -> error("Unsupported array element type for field '$fieldName'")
     }

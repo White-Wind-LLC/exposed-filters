@@ -151,7 +151,7 @@ internal fun eqValue(
         is UuidColumnType -> (expr as ExpressionWithColumnType<Uuid>).eq(Uuid.parse(raw))
         is BooleanColumnType -> (expr as ExpressionWithColumnType<Boolean>).eq(raw.toBooleanStrict())
         is EnumerationNameColumnType<*>, is EnumerationColumnType<*>, is CustomEnumerationColumnType<*> -> {
-            val enumValue = resolveEnumValue(expr.columnType, raw, fieldName)
+            val enumValue = resolveEnumValue(expr, expr.columnType, raw, fieldName)
             @Suppress("UNCHECKED_CAST")
             (expr as ExpressionWithColumnType<Enum<*>>).eq(enumValue)
         }
@@ -218,7 +218,7 @@ internal fun inListValue(
         is UuidColumnType -> (expr as ExpressionWithColumnType<Uuid>).inList(raws.map(Uuid::parse))
         is BooleanColumnType -> (expr as ExpressionWithColumnType<Boolean>).inList(raws.map(String::toBooleanStrict))
         is EnumerationNameColumnType<*>, is EnumerationColumnType<*>, is CustomEnumerationColumnType<*> -> {
-            val enumValues = raws.map { resolveEnumValue(expr.columnType, it, fieldName) }
+            val enumValues = raws.map { resolveEnumValue(expr, expr.columnType, it, fieldName) }
             @Suppress("UNCHECKED_CAST")
             (expr as ExpressionWithColumnType<Enum<*>>).inList(enumValues)
         }
@@ -290,8 +290,8 @@ internal fun betweenValues(
             }
         }
         is EnumerationColumnType<*> -> {
-            val left = resolveEnumValue(expr.columnType, from, fieldName)
-            val right = resolveEnumValue(expr.columnType, to, fieldName)
+            val left = resolveEnumValue(expr, expr.columnType, from, fieldName)
+            val right = resolveEnumValue(expr, expr.columnType, to, fieldName)
             @Suppress("UNCHECKED_CAST")
             (expr as ExpressionWithColumnType<Comparable<Any>>).between(
                 left as Comparable<Any>,

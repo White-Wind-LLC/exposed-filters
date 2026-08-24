@@ -72,7 +72,7 @@ internal fun compareGreater(
         is UUIDColumnType -> (expr as ExpressionWithColumnType<java.util.UUID>).greater(java.util.UUID.fromString(raw))
         is UuidColumnType -> (expr as ExpressionWithColumnType<Uuid>).greater(Uuid.parse(raw))
         is EnumerationColumnType<*> -> {
-            val value = resolveEnumValue(expr.columnType, raw, fieldName)
+            val value = resolveEnumValue(expr, expr.columnType, raw, fieldName)
             @Suppress("UNCHECKED_CAST")
             (expr as ExpressionWithColumnType<Comparable<Any>>).greater(value as Comparable<Any>)
         }
@@ -135,7 +135,7 @@ internal fun compareGreaterEq(
         is UUIDColumnType -> (expr as ExpressionWithColumnType<java.util.UUID>).greaterEq(java.util.UUID.fromString(raw))
         is UuidColumnType -> (expr as ExpressionWithColumnType<Uuid>).greaterEq(Uuid.parse(raw))
         is EnumerationColumnType<*> -> {
-            val value = resolveEnumValue(expr.columnType, raw, fieldName)
+            val value = resolveEnumValue(expr, expr.columnType, raw, fieldName)
             @Suppress("UNCHECKED_CAST")
             (expr as ExpressionWithColumnType<Comparable<Any>>).greaterEq(value as Comparable<Any>)
         }
@@ -198,7 +198,7 @@ internal fun compareLess(
         is UUIDColumnType -> (expr as ExpressionWithColumnType<java.util.UUID>).less(java.util.UUID.fromString(raw))
         is UuidColumnType -> (expr as ExpressionWithColumnType<Uuid>).less(Uuid.parse(raw))
         is EnumerationColumnType<*> -> {
-            val value = resolveEnumValue(expr.columnType, raw, fieldName)
+            val value = resolveEnumValue(expr, expr.columnType, raw, fieldName)
             @Suppress("UNCHECKED_CAST")
             (expr as ExpressionWithColumnType<Comparable<Any>>).less(value as Comparable<Any>)
         }
@@ -261,7 +261,7 @@ internal fun compareLessEq(
         is UUIDColumnType -> (expr as ExpressionWithColumnType<java.util.UUID>).lessEq(java.util.UUID.fromString(raw))
         is UuidColumnType -> (expr as ExpressionWithColumnType<Uuid>).lessEq(Uuid.parse(raw))
         is EnumerationColumnType<*> -> {
-            val value = resolveEnumValue(expr.columnType, raw, fieldName)
+            val value = resolveEnumValue(expr, expr.columnType, raw, fieldName)
             @Suppress("UNCHECKED_CAST")
             (expr as ExpressionWithColumnType<Comparable<Any>>).lessEq(value as Comparable<Any>)
         }
