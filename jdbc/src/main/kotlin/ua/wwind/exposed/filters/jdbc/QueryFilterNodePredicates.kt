@@ -79,6 +79,7 @@ internal fun predicateForField(
     }
 
     val refInfo = resolveReference(baseExpr)
+        ?: options.referenceResolver?.invoke(baseExpr)
         ?: error("Field $baseName is not a reference; cannot use nested property $nestedName")
 
     val targetColumns = refInfo.referencedTable.propertyToColumnMap()
@@ -97,9 +98,16 @@ internal fun predicateForField(
     return exists(subQuery)
 }
 
-internal data class ReferenceInfo(
-    val referencedIdColumn: Column<*>,
-    val referencedTable: Table
+/**
+ * Describes the table a reference column points at, so a nested field path can be turned into an
+ * `EXISTS` subquery against it.
+ *
+ * @property referencedIdColumn Column on [referencedTable] the reference column is compared against.
+ * @property referencedTable Table the nested property is read from.
+ */
+public data class ReferenceInfo(
+    public val referencedIdColumn: Column<*>,
+    public val referencedTable: Table,
 )
 
 internal fun resolveReference(column: Column<*>): ReferenceInfo? {

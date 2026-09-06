@@ -95,9 +95,9 @@ Prerequisites: Kotlin 2.4.10, repository `mavenCentral()`.
 
 ```kotlin
 dependencies {
-  implementation("ua.wwind.exposed-filters:exposed-filters-core:1.10.0")
-  implementation("ua.wwind.exposed-filters:exposed-filters-jdbc:1.10.0")
-  implementation("ua.wwind.exposed-filters:exposed-filters-rest:1.10.0")
+  implementation("ua.wwind.exposed-filters:exposed-filters-core:1.11.0")
+  implementation("ua.wwind.exposed-filters:exposed-filters-jdbc:1.11.0")
+  implementation("ua.wwind.exposed-filters:exposed-filters-rest:1.11.0")
 }
 ```
 
@@ -108,6 +108,7 @@ Pick only what you need: `core` alone for the model and DSL, `+ jdbc` to apply f
 
 | Library version | Kotlin | Ktor  | Exposed      |
 |-----------------|--------|-------|--------------|
+| 1.11.0          | 2.4.10 | 3.5.2 | 1.4.0        |
 | 1.10.0          | 2.4.10 | 3.5.2 | 1.4.0        |
 | 1.9.1           | 2.4.10 | 3.5.2 | 1.4.0        |
 | 1.8.0           | 2.3.21 | 3.4.3 | 1.3.0        |
@@ -397,10 +398,31 @@ Example: filter products by warehouse name prefix
 
 Constraints:
 
-- Nested paths are allowed only on reference columns; using `field.subField` on a non-reference column raises an error.
+- Nested paths are allowed only on reference columns; using `field.subField` on a non-reference column raises an error
+  unless a `referenceResolver` claims it (see below).
 - Operator constraints still apply based on the target column type (e.g., `CONTAINS`/`STARTS_WITH` only for strings).
 - Path nesting for references is limited to one level (e.g., `warehouseId.name`). Multi-hop like `a.b.c` is not
   supported.
+
+### Columns without a physical foreign key
+
+A modular codebase sometimes cannot declare the real FK — the target table lives in a module the owning
+module must not depend on — and stores a plain `uuid` column instead. `FilterOptions.referenceResolver`
+lets you filter such a column by a nested property anyway: it maps the column to the table its value
+points at, and the same `EXISTS` subquery is built.
+
+```kotlin
+val options = FilterOptions(
+    referenceResolver = { column ->
+        if (column === Barcodes.lotId) ReferenceInfo(Lots.id, Lots) else null
+    },
+)
+
+Barcodes.selectAll().applyFiltersOn(Barcodes, filter, options)
+```
+
+The resolver runs only after Exposed's own `referee` lookup comes back empty, so a declared reference
+always wins. Returning `null` leaves the column unresolvable and keeps the error.
 
 ## Filtering by JSON/JSONB fields
 

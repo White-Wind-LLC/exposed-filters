@@ -2,6 +2,24 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.11.0] - 2026-09-07
+
+- JDBC: nested field paths on columns that carry no physical foreign key
+    - `referenceField.nestedField` resolved the target table through Exposed's `referee`, so a column
+      that holds the id of another table without declaring the FK failed with `Field <x> is not a
+      reference; cannot use nested property <y>`. A modular codebase hits this whenever the target
+      table lives in a module the owning module must not depend on: the logical reference exists, the
+      physical one cannot.
+    - `FilterOptions.referenceResolver` supplies the missing link. It maps a `Column` to the
+      `ReferenceInfo` describing its logical target, and the usual `EXISTS` subquery is built from
+      there — inside the filter tree, so `AND`/`OR`/`NOT` grouping keeps its meaning.
+    - The resolver is consulted **only** after the `referee` lookup comes back empty, and defaults to
+      `null`. A declared reference always wins, and behavior is unchanged for every caller that does
+      not set it.
+    - `ReferenceInfo` is now public, as the resolver's return type.
+
+**Full Changelog**: https://github.com/White-Wind-LLC/exposed-filters/compare/v1.10.0...v1.11.0
+
 ## [1.10.0] - 2026-08-25
 
 - JDBC: enums are filterable in every Exposed storage form
