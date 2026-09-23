@@ -8,13 +8,20 @@ import org.jetbrains.exposed.v1.core.Table
 /**
  * Replaces the column a nested field path reads with an expression over a wider source.
  *
- * @property source Stands in for the referenced table as the `EXISTS` subquery's source. It must
- * still expose the referenced id column, so it is normally that table joined to another one.
+ * @property source Stands in for the referenced table as the `EXISTS` subquery's source: the table
+ * joined to another one, an alias of it, a subquery, a CTE, a temporary table.
  * @property expression The expression the predicate is built against instead of the plain column.
+ * @property idExpression The expression in [source] that holds the referenced id — the one the
+ * subquery compares against the base column. Leave it `null` when [source] still exposes the
+ * referenced table's own id column (the table joined to another one); set it whenever [source]
+ * renames or replaces that table, e.g. `alias[Products.id]` for an alias or a subquery, or the id
+ * column of a CTE. A `null` here with a source that does not expose the id column fails fast, since
+ * the column would otherwise either be missing from the subquery or bind to the outer query.
  */
 public data class NestedFieldProjection(
     public val source: ColumnSet,
     public val expression: ExpressionWithColumnType<*>,
+    public val idExpression: ExpressionWithColumnType<*>? = null,
 )
 
 /**

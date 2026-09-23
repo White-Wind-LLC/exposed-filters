@@ -451,10 +451,31 @@ val options = FilterOptions(
 )
 ```
 
-The source must still expose the referenced id column, since the subquery compares it against the
-base column. Unlike `referenceResolver`, this one is consulted for every nested path — including a
-reference Exposed resolves itself — because the reference is not what is being replaced. Returning
-`null` reads the target table's own column, leaving the emitted SQL unchanged.
+The subquery compares the referenced id against the base column. A source that joins the target
+table to another one still exposes that id, so nothing else is needed. When the source renames or
+replaces the target table — an alias of it, a subquery, a CTE, a temporary table — pass
+`idExpression`, the expression in the source that holds the id:
+
+```kotlin
+val names = Products
+    .leftJoin(ProductTranslations, additionalConstraint = { /* … */ })
+    .select(Products.id, displayName)
+    .alias("pn")
+
+NestedFieldProjection(
+    source = names,
+    expression = names[displayName],
+    idExpression = names[Products.id],
+)
+```
+
+Without `idExpression`, a source that does not expose the referenced id column fails with an
+`IllegalArgumentException` before the query runs: otherwise the id would be missing from the subquery
+or, worse, bind to the same table in the outer query and match the wrong rows.
+
+Unlike `referenceResolver`, this one is consulted for every nested path — including a reference
+Exposed resolves itself — because the reference is not what is being replaced. Returning `null` reads
+the target table's own column, leaving the emitted SQL unchanged.
 
 ## Filtering by JSON/JSONB fields
 

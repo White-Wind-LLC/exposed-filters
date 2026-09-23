@@ -5,6 +5,7 @@ package ua.wwind.exposed.filters.jdbc
 import org.jetbrains.exposed.v1.core.Column
 import org.jetbrains.exposed.v1.core.QueryBuilder
 import org.jetbrains.exposed.v1.core.Table
+import org.jetbrains.exposed.v1.core.alias
 import org.jetbrains.exposed.v1.core.and
 import org.jetbrains.exposed.v1.core.coalesce
 import org.jetbrains.exposed.v1.core.eq
@@ -13,6 +14,7 @@ import org.jetbrains.exposed.v1.exceptions.UnsupportedByDialectException
 import org.jetbrains.exposed.v1.jdbc.Database
 import org.jetbrains.exposed.v1.jdbc.SchemaUtils
 import org.jetbrains.exposed.v1.jdbc.insert
+import org.jetbrains.exposed.v1.jdbc.select
 import org.jetbrains.exposed.v1.jdbc.selectAll
 import org.jetbrains.exposed.v1.jdbc.transactions.transaction
 import org.junit.jupiter.api.AfterEach
@@ -216,6 +218,65 @@ class QueryFilterNestedProjectionTest {
                 listOf("BAL-A"),
                 skusMatching(leaf("productId.name", FilterOperator.EQ, "Alpha"), options),
             )
+        }
+    }
+
+    private fun projectedBy(projection: NestedFieldProjection) = FilterOptions(
+        nestedFieldResolver = { table, nestedField ->
+            if (table === ProjProductsTable && nestedField == "name") projection else null
+        },
+    )
+
+    @Test
+    fun `an id expression lets an alias of the target table stand in for it`() {
+        val products = ProjProductsTable.alias("p")
+        val options = projectedBy(
+            NestedFieldProjection(
+                source = products,
+                expression = products[ProjProductsTable.name],
+                idExpression = products[ProjProductsTable.id],
+            ),
+        )
+        transaction {
+            assertEquals(listOf("BAL-A"), skusMatching(leaf("productId.name", FilterOperator.EQ, "Alpha"), options))
+        }
+    }
+
+    @Test
+    fun `an id expression lets a subquery replace the target table entirely`() {
+        val displayName = coalesce(ProjProductTranslationsTable.name, ProjProductsTable.name).alias("display_name")
+        val names = ProjProductsTable
+            .leftJoin(
+                otherTable = ProjProductTranslationsTable,
+                additionalConstraint = {
+                    (ProjProductTranslationsTable.productId eq ProjProductsTable.id) and
+                        (ProjProductTranslationsTable.language eq "uk")
+                },
+            )
+            .select(ProjProductsTable.id, displayName)
+            .alias("pn")
+        val options = projectedBy(
+            NestedFieldProjection(
+                source = names,
+                expression = names[displayName],
+                idExpression = names[ProjProductsTable.id],
+            ),
+        )
+        transaction {
+            assertEquals(listOf("BAL-A"), skusMatching(leaf("productId.name", FilterOperator.EQ, "Альфа"), options))
+            assertEquals(listOf("BAL-B"), skusMatching(leaf("productId.name", FilterOperator.EQ, "Beta"), options))
+        }
+    }
+
+    @Test
+    fun `a source without the referenced id and no id expression fails before reaching the database`() {
+        val products = ProjProductsTable.alias("p")
+        val options = projectedBy(NestedFieldProjection(products, products[ProjProductsTable.name]))
+        transaction {
+            val error = assertThrows(IllegalArgumentException::class.java) {
+                skusMatching(leaf("productId.name", FilterOperator.EQ, "Alpha"), options)
+            }
+            assertTrue(error.message!!.contains("idExpression"), error.message)
         }
     }
 

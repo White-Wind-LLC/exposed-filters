@@ -11,8 +11,13 @@ All notable changes to this project will be documented in this file.
       value, silently and with valid SQL.
     - `FilterOptions.nestedFieldResolver` maps `(targetTable, nestedField)` to a
       `NestedFieldProjection`, which supplies the subquery's source and the expression the predicate
-      is built against. The source must still expose the referenced id column, so it is normally the
-      target table joined to another one.
+      is built against.
+    - The source can be the target table joined to another one, or anything that replaces it: an
+      alias, a subquery, a CTE, a temporary table. In the latter case `idExpression` names the
+      expression in the source that holds the referenced id, since the subquery compares it against
+      the base column. Leaving it `null` with a source that does not expose the target table's id
+      column fails with an `IllegalArgumentException` instead of emitting SQL that either errors in the
+      database or binds the id to the outer query.
     - Unlike `referenceResolver`, it is consulted for **every** nested path, including one Exposed
       resolves through its own `referee`. The reference is not what needs replacing; the column
       behind it is. Resolution order for the reference itself is unchanged.

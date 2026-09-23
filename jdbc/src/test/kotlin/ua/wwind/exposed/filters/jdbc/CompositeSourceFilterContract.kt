@@ -180,11 +180,11 @@ abstract class CompositeSourceFilterContract {
         }
     }
 
-    @Disabled("GAP-1: computed fields of a subquery are not filterable, QueryAlias.columns holds only plain columns")
+    @Disabled("GAP-1 (#8): computed fields of a subquery are not filterable, QueryAlias.columns holds only plain columns")
     @Test
     fun `subquery joined to subquery, filtered on computed fields of both`() {
         transaction {
-            val names = displayNames().alias("names")
+            val names = displayNames().alias("dn")
             val stock = stockTotals().alias("stock")
             val join = stock.innerJoin(names, { stock[CsBalances.productId] }, { names[CsProducts.id] })
 
@@ -218,7 +218,7 @@ abstract class CompositeSourceFilterContract {
         }
     }
 
-    @Disabled("GAP-1: computed fields of a subquery are not filterable, QueryAlias.columns holds only plain columns")
+    @Disabled("GAP-1 (#8): computed fields of a subquery are not filterable, QueryAlias.columns holds only plain columns")
     @Test
     fun `cte joined to subquery`() {
         transaction {
@@ -257,7 +257,7 @@ abstract class CompositeSourceFilterContract {
         }
     }
 
-    @Disabled("GAP-4: a Table resolves fields by Kotlin property only, columns registered at runtime are invisible")
+    @Disabled("GAP-4 (#11): a Table resolves fields by Kotlin property only, columns registered at runtime are invisible")
     @Test
     fun `a single cte as the whole source`() {
         transaction {
@@ -289,7 +289,7 @@ abstract class CompositeSourceFilterContract {
         }
     }
 
-    @Disabled("GAP-1: computed fields of a subquery are not filterable, QueryAlias.columns holds only plain columns")
+    @Disabled("GAP-1 (#8): computed fields of a subquery are not filterable, QueryAlias.columns holds only plain columns")
     @Test
     fun `the assembled result filtered as a whole, including a computed field`() {
         transaction {
@@ -310,7 +310,7 @@ abstract class CompositeSourceFilterContract {
         }
     }
 
-    @Disabled("GAP-2: toColumnMap() keys by SQL name with associateBy, the last duplicate silently wins")
+    @Disabled("GAP-2 (#9): toColumnMap() keys by SQL name with associateBy, the last duplicate silently wins")
     @Test
     fun `the same column name from two sources is ambiguous, not silently resolved`() {
         transaction {
@@ -326,7 +326,7 @@ abstract class CompositeSourceFilterContract {
         }
     }
 
-    @Disabled("GAP-3: predicates always go to WHERE, an aggregate needs HAVING or an outer query")
+    @Disabled("GAP-3 (#10): predicates always go to WHERE, an aggregate needs HAVING or an outer query")
     @Test
     fun `a filter on an aggregate in the projection`() {
         transaction {
@@ -342,7 +342,7 @@ abstract class CompositeSourceFilterContract {
         }
     }
 
-    @Disabled("GAP-5: a subquery column is a clone without referee, so a reference path cannot resolve")
+    @Disabled("GAP-5 (#12): a subquery column is a clone without referee, so a reference path cannot resolve")
     @Test
     fun `a reference path through a subquery column`() {
         transaction {
@@ -357,7 +357,6 @@ abstract class CompositeSourceFilterContract {
         }
     }
 
-    @Disabled("GAP-6: NestedFieldProjection cannot replace the id column, the subquery always compares the target table's id")
     @Test
     fun `a nested field resolver reading from a cte alone`() {
         transaction {
@@ -365,7 +364,11 @@ abstract class CompositeSourceFilterContract {
             val options = FilterOptions(
                 nestedFieldResolver = { table, nestedField ->
                     if (table === CsProducts && nestedField == "name") {
-                        NestedFieldProjection(names, names.col<String>("display_name"))
+                        NestedFieldProjection(
+                            source = names,
+                            expression = names.col<String>("display_name"),
+                            idExpression = names.col<Uuid>("id"),
+                        )
                     } else {
                         null
                     }
