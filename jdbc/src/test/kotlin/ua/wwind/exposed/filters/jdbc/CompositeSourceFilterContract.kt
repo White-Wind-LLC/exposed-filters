@@ -22,6 +22,7 @@ import org.jetbrains.exposed.v1.jdbc.union
 import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertThrows
+import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Disabled
 import org.junit.jupiter.api.Test
@@ -310,7 +311,6 @@ abstract class CompositeSourceFilterContract {
         }
     }
 
-    @Disabled("GAP-2 (#9): toColumnMap() keys by SQL name with associateBy, the last duplicate silently wins")
     @Test
     fun `the same column name from two sources is ambiguous, not silently resolved`() {
         transaction {
@@ -323,6 +323,39 @@ abstract class CompositeSourceFilterContract {
                     .applyFiltersOn(join, where(field("name", FilterOperator.EQ, "Альфа")))
                     .toList()
             }
+        }
+    }
+
+    @Test
+    fun `an ambiguous field is reported with the sources that expose it`() {
+        transaction {
+            val translations = CsTranslations.selectAll().where { CsTranslations.language eq "uk" }.alias("tr")
+            val join = CsProducts.innerJoin(translations, { CsProducts.id }, { translations[CsTranslations.productId] })
+
+            val error = assertThrows(IllegalArgumentException::class.java) {
+                join.select(CsProducts.id)
+                    .applyFiltersOn(join, where(field("name", FilterOperator.EQ, "Альфа")))
+            }
+
+            val message = error.message.orEmpty()
+            assertTrue("'name'" in message, message)
+            assertTrue("'cs_products'" in message, message)
+            assertTrue("'tr'" in message, message)
+        }
+    }
+
+    @Test
+    fun `a join that shares a column name still filters on its unambiguous fields`() {
+        transaction {
+            val translations = CsTranslations.selectAll().alias("tr")
+            val join = CsProducts.innerJoin(translations, { CsProducts.id }, { translations[CsTranslations.productId] })
+
+            val ids = join.select(CsProducts.id)
+                .applyFiltersOn(join, where(field("language", FilterOperator.EQ, "uk")))
+                .map { it[CsProducts.id] }
+                .sortedBy { it.toString() }
+
+            assertEquals(listOf(PRODUCT_A, PRODUCT_C), ids)
         }
     }
 
