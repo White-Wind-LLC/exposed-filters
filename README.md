@@ -1090,6 +1090,35 @@ val query = buildWorkersQuery(filter)
 
 This allows you to handle both complex query structures and custom column types in the same query.
 
+### Filtering on aggregates (`HAVING`)
+
+A filter on an aggregate expression is added to `HAVING`, every other filter to `WHERE`, and both can appear in the
+same request. The query is never wrapped in an outer `SELECT`, so your result rows stay keyed by your own fields:
+
+```kotlin
+val total = Balances.qty.sum()
+
+Balances.select(Balances.productId, total)
+    .groupBy(Balances.productId)
+    .applyFilters(
+        mapOf("qty" to Balances.qty, "total" to total),
+        filterRequest { "qty" gte 5; "total" gt 100 },
+    )
+// WHERE balances.qty >= 5 GROUP BY balances.product_id HAVING SUM(balances.qty) > 100
+```
+
+- Exposed's aggregates (`sum()`, `count()`, `min()`, `max()`, `avg()`, the standard deviations and variances,
+  `groupConcat()`) are detected automatically, including inside another expression (`coalesce(qty.sum(), 0)`).
+- An aggregate the library cannot recognize, such as a `CustomFunction("array_agg", ...)`, is declared by field name:
+  `FilterOptions(aggregateFields = setOf("tags"))`.
+- Predicates joined by AND are split between the two clauses one by one. An `OR`/`NOT` group that touches an aggregate
+  cannot be split without changing its meaning, so it moves to `HAVING` as a whole; its other fields must then be
+  grouped columns, or the database rejects the query.
+- A computed field read from a subquery (`alias[total]`, or `applyFiltersOn(alias, ...)`) is already a value of the
+  derived table, so it stays in `WHERE`.
+- A window function (`sum().over()`) cannot be filtered in either clause of the query that computes it; such a filter
+  fails with `IllegalArgumentException`. Alias the query and filter the alias instead.
+
 ## Example: filtering by date and timestamp
 
 The `example` module contains an `Events` table demonstrating both a date-only field and a timestamp field, along with a
