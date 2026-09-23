@@ -974,6 +974,20 @@ names to specific SQL expressions rather than relying on the default table colum
 (e.g. `name` on both `products` and a translations subquery), filtering on that name throws `IllegalArgumentException`
 naming the sources instead of silently picking one of them — map the field explicitly with `applyFilters` to choose.
 
+A computed field of a subquery is addressable by its alias label, whether the subquery is filtered on its own or joined
+with other sources. The condition goes straight into the query's `WHERE`; the query is not wrapped in an outer `SELECT`:
+
+```kotlin
+val stock = Balances
+    .select(Balances.productId, Balances.qty.sum().alias("total"))
+    .groupBy(Balances.productId)
+    .alias("stock")
+val join = stock.innerJoin(Products, { stock[Balances.productId] }, { Products.id })
+
+join.select(stock[Balances.productId])
+    .applyFiltersOn(join, filterRequest { gt("total", 5) })  // WHERE stock.total > 5
+```
+
 ### Basic approach
 
 Instead of using `applyFiltersOn(table, filter)`, use the lower-level `applyFilters(expressionMap, filter)` method and
