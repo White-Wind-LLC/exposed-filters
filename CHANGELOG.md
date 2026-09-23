@@ -27,7 +27,7 @@ All notable changes to this project will be documented in this file.
     - **Source-compatible, not binary-compatible.** `FilterOptions` is a `data class`, so the added
       parameter changes its constructor arity on the JVM. Code compiled against 1.11.0 must be
       recompiled; it will not link against 1.12.0 as it stands.
-- Dependencies: Kotlin 2.4.10 → 2.4.20, Ktor 3.5.2 → 3.6.0.
+- Dependencies: Kotlin 2.4.10 → 2.4.20, Ktor 3.5.2 → 3.6.0, Exposed 1.4.0 → 1.5.0.
 
 **Full Changelog**: https://github.com/White-Wind-LLC/exposed-filters/compare/v1.11.0...v1.12.0
 
