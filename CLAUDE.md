@@ -16,6 +16,7 @@ JVM toolchain is Java 17. Use the Gradle wrapper.
 - Run a single test class: `./gradlew :jdbc:test --tests "ua.wwind.exposed.filters.jdbc.QueryFilterExtensionsTest"`
 - Run a single test method: `./gradlew :jdbc:test --tests "ua.wwind.exposed.filters.jdbc.QueryFilterExtensionsTest.someMethod"`
 - Generate Dokka docs (all modules): `./gradlew generateDocs`
+- Run benchmarks: `./gradlew :benchmark:jmh` (subset: `-PjmhInclude=<regex>`); takes ~20 min, don't run other builds meanwhile
 - Skip the `example` sample module (used by CI/publish): `-PexcludeSamples=true`
 - Local Maven Central publish: see `RELEASING.md` (requires signing + credentials env vars)
 
@@ -23,12 +24,13 @@ Note: `jdbc` tests use Testcontainers + PostgreSQL and H2; Docker must be runnin
 
 ## Module layout and dependencies
 
-Three published modules plus a non-published sample:
+Three published modules plus two non-published ones (sample and benchmarks):
 
 - `core` — pure-Kotlin filter model (no Exposed/Ktor dependency). Contains `FilterRequest`, `FilterNode` (`FilterLeaf` / `FilterGroup`), `FieldFilter`, `FilterOperator`, `FilterCombinator`, the `filterRequest { ... }` DSL builder (`FilterRequestBuilder.kt`), JSON (de)serialization (`FilterRequestSerialization.kt`), and field-exclusion utility (`FilterFieldExclusion.kt`).
 - `jdbc` — depends on `core` + Exposed. Translates `FilterNode` into Exposed `Op<Boolean>`. This is the main logic module.
 - `rest` — depends on `core` + Ktor. Only responsibility: receive/parse a JSON body into a `FilterRequest` (`ApplicationCall.receiveFilterRequestOrNull`, `parseFilterRequestOrNull`). Accepts both flat and tree JSON shapes and normalizes them.
 - `example` — not published. Ktor + H2 sample app; excluded via `-PexcludeSamples=true` in CI/publish.
+- `benchmark` — not published, same exclusion. JMH suite (`src/jmh`) measuring library overhead against the equivalent hand-written Exposed DSL, per scenario. `@Setup` asserts the manual and library variants render identical SQL — when a library change breaks that, fix the scenario's manual predicate to match the intended SQL, never loosen the check. Per-release results are committed to `benchmark/results/<version>.json`; see `benchmark/README.md`.
 
 All modules use `explicitApi()` — new public declarations must be explicitly marked `public`.
 
