@@ -49,12 +49,18 @@ public data class NestedFieldProjection(
  * column behind it is. Return `null` to read the target table's own column, which is the default and
  * keeps the emitted SQL unchanged. Useful when the readable value lives beside the target table
  * rather than in it, as a translation does.
+ * @property aggregateFields Field names whose expressions are aggregates the library cannot recognize
+ * on its own, e.g. a `CustomFunction("array_agg", ...)`. Predicates on these fields go to `HAVING`
+ * instead of `WHERE`. Exposed's built-in aggregates (`sum()`, `count()`, `min()`, `max()`, `avg()`,
+ * the standard deviations and variances, `groupConcat()`), including wrapped in another expression,
+ * are detected without listing them here. Matching is by exact field name as written in the filter.
  */
 public data class FilterOptions(
     public val caseSensitiveStrings: Boolean = false,
     public val normalizedStringFields: Set<String> = emptySet(),
     public val referenceResolver: ((Column<*>) -> ReferenceInfo?)? = null,
     public val nestedFieldResolver: ((Table, String) -> NestedFieldProjection?)? = null,
+    public val aggregateFields: Set<String> = emptySet(),
 )
 
 internal fun FilterOptions.usesNormalizedComparison(fieldName: String): Boolean =

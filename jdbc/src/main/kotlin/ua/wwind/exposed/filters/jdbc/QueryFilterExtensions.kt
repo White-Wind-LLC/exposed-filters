@@ -12,6 +12,7 @@ import org.jetbrains.exposed.v1.core.Join
 import org.jetbrains.exposed.v1.core.QueryAlias
 import org.jetbrains.exposed.v1.core.Table
 import org.jetbrains.exposed.v1.jdbc.Query
+import org.jetbrains.exposed.v1.jdbc.andHaving
 import org.jetbrains.exposed.v1.jdbc.andWhere
 import ua.wwind.exposed.filters.core.FilterGroup
 import ua.wwind.exposed.filters.core.FilterLeaf
@@ -56,8 +57,7 @@ public fun Query.applyFiltersOn(
     val root = filterRequest.root
     columnSet.requireUnambiguousFields(root)
     val columns = columnSet.toColumnMap()
-    val predicate = context(null as ColumnMappersModule?, options) { nodeToPredicate(root, columns) } ?: return this
-    return andWhere { predicate }
+    return context(null as ColumnMappersModule?, options) { applyNode(root, columns) }
 }
 
 /**
@@ -74,8 +74,7 @@ public fun Query.applyFiltersOn(
     val root = filterRequest.root
     columnSet.requireUnambiguousFields(root)
     val columns = columnSet.toColumnMap()
-    val predicate = context(mappersModule, options) { nodeToPredicate(root, columns) } ?: return this
-    return andWhere { predicate }
+    return context(mappersModule, options) { applyNode(root, columns) }
 }
 
 /**
@@ -87,6 +86,11 @@ public fun Query.applyFiltersOn(
  *
  * **Note:** Nested field filters (e.g., `user.name`) are only supported when the expression
  * is a [Column] with a foreign key reference.
+ *
+ * A predicate on an aggregate expression (e.g. `qty.sum()`, also inside another expression, or any field
+ * listed in [FilterOptions.aggregateFields]) is added to `HAVING`, every other predicate to `WHERE`.
+ * An OR/NOT group that touches an aggregate goes to `HAVING` whole. A window function (`over()`) cannot be
+ * filtered at the query level that computes it and fails with [IllegalArgumentException].
  */
 public fun Query.applyFilters(
     expressions: Map<String, ExpressionWithColumnType<*>>,
@@ -94,9 +98,7 @@ public fun Query.applyFilters(
     options: FilterOptions = DefaultFilterOptions,
 ): Query {
     if (filterRequest == null) return this
-    val root = filterRequest.root
-    val predicate = context(null as ColumnMappersModule?, options) { nodeToPredicate(root, expressions) } ?: return this
-    return andWhere { predicate }
+    return context(null as ColumnMappersModule?, options) { applyNode(filterRequest.root, expressions) }
 }
 
 /**
@@ -109,9 +111,22 @@ public fun Query.applyFilters(
     options: FilterOptions = DefaultFilterOptions,
 ): Query {
     if (filterRequest == null) return this
-    val root = filterRequest.root
-    val predicate = context(mappersModule, options) { nodeToPredicate(root, expressions) } ?: return this
-    return andWhere { predicate }
+    return context(mappersModule, options) { applyNode(filterRequest.root, expressions) }
+}
+
+/**
+ * Adds the filter tree to this query: its predicates on aggregates to `HAVING`, the rest to `WHERE`
+ * (see [splitByClause]). Both predicates are built before either is added, so a filter that fails
+ * leaves the query untouched.
+ */
+context(mappersModule: ColumnMappersModule?, options: FilterOptions)
+private fun Query.applyNode(root: FilterNode, expressions: Map<String, ExpressionWithColumnType<*>>): Query {
+    val split = root.splitByClause(expressions)
+    val wherePredicate = split.where?.let { nodeToPredicate(it, expressions) }
+    val havingPredicate = split.having?.let { nodeToPredicate(it, expressions) }
+    if (wherePredicate != null) andWhere { wherePredicate }
+    if (havingPredicate != null) andHaving { havingPredicate }
+    return this
 }
 
 /**
@@ -199,7 +214,7 @@ private fun QueryAlias.computedFields(): List<SourceField> =
         SourceField(computed.alias, expression, alias)
     }
 
-private fun FilterNode.referencedFields(): Sequence<String> = when (this) {
+internal fun FilterNode.referencedFields(): Sequence<String> = when (this) {
     is FilterLeaf -> predicates.asSequence().map { it.field }
     is FilterGroup -> children.asSequence().flatMap { it.referencedFields() }
 }

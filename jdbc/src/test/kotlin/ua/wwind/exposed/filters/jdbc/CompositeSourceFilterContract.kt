@@ -3,12 +3,16 @@
 package ua.wwind.exposed.filters.jdbc
 
 import org.jetbrains.exposed.v1.core.Column
+import org.jetbrains.exposed.v1.core.CustomFunction
+import org.jetbrains.exposed.v1.core.IntegerColumnType
 import org.jetbrains.exposed.v1.core.Table
 import org.jetbrains.exposed.v1.core.alias
 import org.jetbrains.exposed.v1.core.and
 import org.jetbrains.exposed.v1.core.coalesce
+import org.jetbrains.exposed.v1.core.count
 import org.jetbrains.exposed.v1.core.eq
 import org.jetbrains.exposed.v1.core.innerJoin
+import org.jetbrains.exposed.v1.core.intLiteral
 import org.jetbrains.exposed.v1.core.leftJoin
 import org.jetbrains.exposed.v1.core.minus
 import org.jetbrains.exposed.v1.core.sum
@@ -27,6 +31,8 @@ import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Disabled
 import org.junit.jupiter.api.Test
 import ua.wwind.exposed.filters.core.FieldFilter
+import ua.wwind.exposed.filters.core.FilterCombinator
+import ua.wwind.exposed.filters.core.FilterGroup
 import ua.wwind.exposed.filters.core.FilterLeaf
 import ua.wwind.exposed.filters.core.FilterOperator
 import ua.wwind.exposed.filters.core.FilterRequest
@@ -376,7 +382,6 @@ abstract class CompositeSourceFilterContract {
         }
     }
 
-    @Disabled("GAP-3 (#10): predicates always go to WHERE, an aggregate needs HAVING or an outer query")
     @Test
     fun `a filter on an aggregate in the projection`() {
         transaction {
@@ -389,6 +394,116 @@ abstract class CompositeSourceFilterContract {
                 .sortedBy { it.toString() }
 
             assertEquals(listOf(PRODUCT_A, PRODUCT_B), ids)
+        }
+    }
+
+    @Test
+    fun `row filters stay in WHERE while aggregate filters go to HAVING`() {
+        transaction {
+            val total = CsBalances.qty.sum()
+
+            // qty >= 5 drops BAL-A2 before grouping: A totals 10 instead of 13 and passes total < 12.
+            val ids = CsBalances.select(CsBalances.productId, total)
+                .groupBy(CsBalances.productId)
+                .applyFilters(
+                    mapOf("qty" to CsBalances.qty, "total" to total),
+                    where(field("qty", FilterOperator.GTE, "5"), field("total", FilterOperator.LT, "12")),
+                )
+                .map { it[CsBalances.productId] }
+                .sortedBy { it.toString() }
+
+            assertEquals(listOf(PRODUCT_A, PRODUCT_B), ids)
+        }
+    }
+
+    @Test
+    fun `an OR group mixing a grouped column and an aggregate goes to HAVING whole`() {
+        transaction {
+            val total = CsBalances.qty.sum()
+            val filter = FilterRequest(
+                FilterGroup(
+                    FilterCombinator.OR,
+                    listOf(
+                        FilterLeaf(listOf(field("productId", FilterOperator.EQ, PRODUCT_C.toString()))),
+                        FilterLeaf(listOf(field("total", FilterOperator.GT, "10"))),
+                    ),
+                )
+            )
+
+            val ids = CsBalances.select(CsBalances.productId, total)
+                .groupBy(CsBalances.productId)
+                .applyFilters(mapOf("productId" to CsBalances.productId, "total" to total), filter)
+                .map { it[CsBalances.productId] }
+                .sortedBy { it.toString() }
+
+            assertEquals(listOf(PRODUCT_A, PRODUCT_C), ids)
+        }
+    }
+
+    @Test
+    fun `a NOT group over an aggregate goes to HAVING`() {
+        transaction {
+            val total = CsBalances.qty.sum()
+            val filter = FilterRequest(
+                FilterGroup(FilterCombinator.NOT, listOf(FilterLeaf(listOf(field("total", FilterOperator.GT, "5")))))
+            )
+
+            val ids = CsBalances.select(CsBalances.productId, total)
+                .groupBy(CsBalances.productId)
+                .applyFilters(mapOf("total" to total), filter)
+                .map { it[CsBalances.productId] }
+
+            assertEquals(listOf(PRODUCT_C), ids)
+        }
+    }
+
+    @Test
+    fun `an aggregate wrapped in another expression is still an aggregate`() {
+        transaction {
+            val total = coalesce(CsBalances.qty.sum(), intLiteral(0))
+            val count = CsBalances.id.count()
+
+            val ids = CsBalances.select(CsBalances.productId, total, count)
+                .groupBy(CsBalances.productId)
+                .applyFilters(
+                    mapOf("total" to total, "count" to count),
+                    where(field("total", FilterOperator.GT, "5"), field("count", FilterOperator.GT, "1")),
+                )
+                .map { it[CsBalances.productId] }
+
+            assertEquals(listOf(PRODUCT_A), ids)
+        }
+    }
+
+    @Test
+    fun `a custom aggregate declared in aggregateFields goes to HAVING`() {
+        transaction {
+            val total = CustomFunction<Int?>("SUM", IntegerColumnType(), CsBalances.qty)
+
+            val ids = CsBalances.select(CsBalances.productId, total)
+                .groupBy(CsBalances.productId)
+                .applyFilters(
+                    mapOf("total" to total),
+                    where(field("total", FilterOperator.GT, "10")),
+                    FilterOptions(aggregateFields = setOf("total")),
+                )
+                .map { it[CsBalances.productId] }
+
+            assertEquals(listOf(PRODUCT_A), ids)
+        }
+    }
+
+    @Test
+    fun `a filter on a window function fails with an explanation`() {
+        transaction {
+            val running = CsBalances.qty.sum().over().partitionBy(CsBalances.productId)
+
+            val error = assertThrows(IllegalArgumentException::class.java) {
+                CsBalances.select(CsBalances.sku, running)
+                    .applyFilters(mapOf("running" to running), where(field("running", FilterOperator.GT, "5")))
+            }
+
+            assertTrue(error.message!!.contains("running") && error.message!!.contains("window"), error.message)
         }
     }
 
