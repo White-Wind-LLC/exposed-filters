@@ -2,12 +2,16 @@
 
 package ua.wwind.exposed.filters.jdbc
 
+import org.jetbrains.exposed.v1.core.Alias
 import org.jetbrains.exposed.v1.core.Column
 import org.jetbrains.exposed.v1.core.ColumnSet
 import org.jetbrains.exposed.v1.core.ExpressionWithColumnType
 import org.jetbrains.exposed.v1.core.Table
 import org.jetbrains.exposed.v1.jdbc.Query
 import org.jetbrains.exposed.v1.jdbc.andWhere
+import ua.wwind.exposed.filters.core.FilterGroup
+import ua.wwind.exposed.filters.core.FilterLeaf
+import ua.wwind.exposed.filters.core.FilterNode
 import ua.wwind.exposed.filters.core.FilterRequest
 import kotlin.reflect.KProperty1
 import kotlin.reflect.full.memberProperties
@@ -32,6 +36,10 @@ import kotlin.reflect.jvm.isAccessible
  * join.selectAll()
  *     .applyFiltersOn(join, filter)  // field: "name", "title", "warehouse_id" (SQL names)
  * ```
+ *
+ * A SQL name exposed by more than one source of a Join (e.g. `name` on both joined tables) is
+ * ambiguous: filtering on it throws [IllegalArgumentException] instead of picking one of the columns.
+ * Use [applyFilters] with an explicit mapping to disambiguate.
  */
 public fun Query.applyFiltersOn(
     columnSet: ColumnSet,
@@ -40,6 +48,7 @@ public fun Query.applyFiltersOn(
 ): Query {
     if (filterRequest == null) return this
     val root = filterRequest.root
+    columnSet.requireUnambiguousFields(root)
     val columns = columnSet.toColumnMap()
     val predicate = context(null as ColumnMappersModule?, options) { nodeToPredicate(root, columns) } ?: return this
     return andWhere { predicate }
@@ -57,6 +66,7 @@ public fun Query.applyFiltersOn(
 ): Query {
     if (filterRequest == null) return this
     val root = filterRequest.root
+    columnSet.requireUnambiguousFields(root)
     val columns = columnSet.toColumnMap()
     val predicate = context(mappersModule, options) { nodeToPredicate(root, columns) } ?: return this
     return andWhere { predicate }
@@ -107,6 +117,34 @@ internal fun ColumnSet.toColumnMap(): Map<String, ExpressionWithColumnType<*>> =
     is Table -> this.propertyToColumnMap()
     else -> this.columns.associateBy { it.name }
 }
+
+/**
+ * Fails when the filter references a SQL name that more than one column of this [ColumnSet] carries.
+ * [toColumnMap] keys such a set by SQL name, so without this check the last duplicate would silently
+ * win and the filter would hit a column the caller may not have meant. Only referenced names are
+ * checked: a join whose sources share a name nobody filters on (typically the join key) stays usable.
+ */
+internal fun ColumnSet.requireUnambiguousFields(root: FilterNode) {
+    if (this is Table) return
+    val ambiguous = columns.distinct().groupBy { it.name }.filterValues { it.size > 1 }
+    if (ambiguous.isEmpty()) return
+    for (field in root.referencedFields()) {
+        val baseName = field.substringBefore('.')
+        val candidates = ambiguous[baseName] ?: continue
+        throw IllegalArgumentException(
+            "Ambiguous filter field: '$baseName' is exposed by " +
+                candidates.joinToString { "'${it.table.sourceName()}'" } +
+                ". Map the field to one column explicitly with applyFilters(Map<String, ExpressionWithColumnType<*>>, ...)."
+        )
+    }
+}
+
+private fun FilterNode.referencedFields(): Sequence<String> = when (this) {
+    is FilterLeaf -> predicates.asSequence().map { it.field }
+    is FilterGroup -> children.asSequence().flatMap { it.referencedFields() }
+}
+
+private fun Table.sourceName(): String = (this as? Alias<*>)?.alias ?: tableName
 
 public fun Table.propertyToColumnMap(): Map<String, ExpressionWithColumnType<*>> =
     this::class.memberProperties

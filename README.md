@@ -970,6 +970,10 @@ names to specific SQL expressions rather than relying on the default table colum
 - **Aliased expressions**: using computed fields, literal values, or expressions with aliases
 - **Joined queries**: selecting columns from multiple related tables in a single result set
 
+`applyFiltersOn(join, filter)` matches fields against SQL column names. When two joined sources expose the same name
+(e.g. `name` on both `products` and a translations subquery), filtering on that name throws `IllegalArgumentException`
+naming the sources instead of silently picking one of them — map the field explicitly with `applyFilters` to choose.
+
 ### Basic approach
 
 Instead of using `applyFiltersOn(table, filter)`, use the lower-level `applyFilters(expressionMap, filter)` method and
