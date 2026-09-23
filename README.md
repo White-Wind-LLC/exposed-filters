@@ -8,7 +8,7 @@ with nested `AND` / `OR` / `NOT` logic, related-entity filtering, and JSON/JSONB
 
 [![Maven Central](https://img.shields.io/maven-central/v/ua.wwind.exposed-filters/exposed-filters-core)](https://central.sonatype.com/artifact/ua.wwind.exposed-filters/exposed-filters-core)
 [![License](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](LICENSE)
-[![Kotlin](https://img.shields.io/badge/kotlin-2.4.10-blue.svg?logo=kotlin)](https://kotlinlang.org)
+[![Kotlin](https://img.shields.io/badge/kotlin-2.4.20-blue.svg?logo=kotlin)](https://kotlinlang.org)
 
 ```text
    UI / client
@@ -91,13 +91,13 @@ Artifacts on Maven Central (group `ua.wwind.exposed-filters`):
 
 ## Installation
 
-Prerequisites: Kotlin 2.4.10, repository `mavenCentral()`.
+Prerequisites: Kotlin 2.4.20, repository `mavenCentral()`.
 
 ```kotlin
 dependencies {
-  implementation("ua.wwind.exposed-filters:exposed-filters-core:1.11.0")
-  implementation("ua.wwind.exposed-filters:exposed-filters-jdbc:1.11.0")
-  implementation("ua.wwind.exposed-filters:exposed-filters-rest:1.11.0")
+  implementation("ua.wwind.exposed-filters:exposed-filters-core:1.12.0")
+  implementation("ua.wwind.exposed-filters:exposed-filters-jdbc:1.12.0")
+  implementation("ua.wwind.exposed-filters:exposed-filters-rest:1.12.0")
 }
 ```
 
@@ -108,6 +108,7 @@ Pick only what you need: `core` alone for the model and DSL, `+ jdbc` to apply f
 
 | Library version | Kotlin | Ktor  | Exposed      |
 |-----------------|--------|-------|--------------|
+| 1.12.0          | 2.4.20 | 3.6.0 | 1.5.0        |
 | 1.11.0          | 2.4.10 | 3.5.2 | 1.4.0        |
 | 1.10.0          | 2.4.10 | 3.5.2 | 1.4.0        |
 | 1.9.1           | 2.4.10 | 3.5.2 | 1.4.0        |
@@ -423,6 +424,59 @@ Barcodes.selectAll().applyFiltersOn(Barcodes, filter, options)
 
 The resolver runs only after Exposed's own `referee` lookup comes back empty, so a declared reference
 always wins. Returning `null` leaves the column unresolvable and keeps the error.
+
+### Reading a nested field from somewhere other than the target table
+
+`referenceField.nestedField` reads `targetTable.nestedField`. When the value a user actually sees
+lives beside that table rather than in it — a translation row is the motivating case — the predicate
+matches the stored value while the UI shows another one. `FilterOptions.nestedFieldResolver` replaces
+what the path reads: it returns the subquery's source and the expression to compare against.
+
+```kotlin
+val options = FilterOptions(
+    nestedFieldResolver = { table, nestedField ->
+        if (table === Products && nestedField == "name") {
+            NestedFieldProjection(
+                source = Products.leftJoin(
+                    otherTable = ProductTranslations,
+                    additionalConstraint = {
+                        (ProductTranslations.productId eq Products.id) and (ProductTranslations.language eq "uk")
+                    },
+                ),
+                expression = coalesce(ProductTranslations.name, Products.name),
+            )
+        } else {
+            null
+        }
+    },
+)
+```
+
+The subquery compares the referenced id against the base column. A source that joins the target
+table to another one still exposes that id, so nothing else is needed. When the source renames or
+replaces the target table — an alias of it, a subquery, a CTE, a temporary table — pass
+`idExpression`, the expression in the source that holds the id:
+
+```kotlin
+val names = Products
+    .leftJoin(ProductTranslations, additionalConstraint = { /* … */ })
+    .select(Products.id, displayName)
+    .alias("pn")
+
+NestedFieldProjection(
+    source = names,
+    expression = names[displayName],
+    idExpression = names[Products.id],
+)
+```
+
+Without `idExpression`, a source that does not expose the referenced id column fails with an
+`IllegalArgumentException` before the query runs: otherwise the id would be missing from the subquery
+or, worse, bind to the same table in the outer query and match the wrong rows.
+
+Unlike `referenceResolver`, this one is consulted for every nested path — including a reference
+Exposed resolves itself — because the reference is not what is being replaced. Returning `null` reads
+the target table's own column, leaving the emitted SQL unchanged.
 
 ## Filtering by JSON/JSONB fields
 

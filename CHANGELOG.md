@@ -2,6 +2,35 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.12.0] - 2026-09-23
+
+- JDBC: a nested field path can read an expression instead of the target table's own column
+    - `referenceField.nestedField` always compiled to `EXISTS (SELECT … FROM targetTable WHERE id = …
+      AND <targetTable.nestedField> …)`. When the readable value does not live in the target table —
+      a translation stored in a side table is the motivating case — the predicate matched the wrong
+      value, silently and with valid SQL.
+    - `FilterOptions.nestedFieldResolver` maps `(targetTable, nestedField)` to a
+      `NestedFieldProjection`, which supplies the subquery's source and the expression the predicate
+      is built against.
+    - The source can be the target table joined to another one, or anything that replaces it: an
+      alias, a subquery, a CTE, a temporary table. In the latter case `idExpression` names the
+      expression in the source that holds the referenced id, since the subquery compares it against
+      the base column. Leaving it `null` with a source that does not expose the target table's id
+      column fails with an `IllegalArgumentException` instead of emitting SQL that either errors in the
+      database or binds the id to the outer query.
+    - Unlike `referenceResolver`, it is consulted for **every** nested path, including one Exposed
+      resolves through its own `referee`. The reference is not what needs replacing; the column
+      behind it is. Resolution order for the reference itself is unchanged.
+    - Defaults to `null`, and returning `null` for a path keeps the target table's own column. The
+      emitted SQL is byte-identical for every caller that does not set it, which a rendering test
+      pins: without a resolver a nested path carries neither a `JOIN` nor a `COALESCE`.
+    - **Source-compatible, not binary-compatible.** `FilterOptions` is a `data class`, so the added
+      parameter changes its constructor arity on the JVM. Code compiled against 1.11.0 must be
+      recompiled; it will not link against 1.12.0 as it stands.
+- Dependencies: Kotlin 2.4.10 → 2.4.20, Ktor 3.5.2 → 3.6.0, Exposed 1.4.0 → 1.5.0.
+
+**Full Changelog**: https://github.com/White-Wind-LLC/exposed-filters/compare/v1.11.0...v1.12.0
+
 ## [1.11.0] - 2026-09-07
 
 - JDBC: nested field paths on columns that carry no physical foreign key

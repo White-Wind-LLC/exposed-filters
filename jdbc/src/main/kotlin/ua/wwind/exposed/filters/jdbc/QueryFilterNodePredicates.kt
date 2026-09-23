@@ -82,17 +82,28 @@ internal fun predicateForField(
         ?: options.referenceResolver?.invoke(baseExpr)
         ?: error("Field $baseName is not a reference; cannot use nested property $nestedName")
 
-    val targetColumns = refInfo.referencedTable.propertyToColumnMap()
-    val targetColumn =
+    val projection = options.nestedFieldResolver?.invoke(refInfo.referencedTable, nestedName)
+    val targetColumn = projection?.expression ?: run {
+        val targetColumns = refInfo.referencedTable.propertyToColumnMap()
         checkNotNull(targetColumns[nestedName]) { "Unknown nested field: $nestedName for reference $baseName" }
+    }
+
+    // The id the base column is compared against must come from the subquery's own source: a
+    // projection that renames or replaces the target table has to say where the id went.
+    val idExpr: ExpressionWithColumnType<*> = projection?.idExpression ?: refInfo.referencedIdColumn.also { id ->
+        require(projection == null || id in projection.source.columns) {
+            "Nested field $field: the projection's source does not expose ${id.table.tableName}.${id.name}; " +
+                "set NestedFieldProjection.idExpression to the expression in the source that holds it"
+        }
+    }
 
     // Build subquery: select referenced id from target table where target predicate holds.
     val targetPredicate = predicateFor(targetColumn, filter, field)
-    val subQuery = refInfo.referencedTable
+    val subQuery = (projection?.source ?: refInfo.referencedTable)
         .selectAll()
         .andWhere {
             @Suppress("UNCHECKED_CAST")
-            ((refInfo.referencedIdColumn as Column<Any?>).eq(baseExpr as Column<Any?>)) and targetPredicate
+            ((idExpr as ExpressionWithColumnType<Any?>).eq(baseExpr as Column<Any?>)) and targetPredicate
         }
 
     return exists(subQuery)
