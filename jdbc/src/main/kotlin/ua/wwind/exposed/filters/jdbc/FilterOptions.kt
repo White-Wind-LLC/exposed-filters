@@ -1,6 +1,21 @@
 package ua.wwind.exposed.filters.jdbc
 
 import org.jetbrains.exposed.v1.core.Column
+import org.jetbrains.exposed.v1.core.ColumnSet
+import org.jetbrains.exposed.v1.core.ExpressionWithColumnType
+import org.jetbrains.exposed.v1.core.Table
+
+/**
+ * Replaces the column a nested field path reads with an expression over a wider source.
+ *
+ * @property source Stands in for the referenced table as the `EXISTS` subquery's source. It must
+ * still expose the referenced id column, so it is normally that table joined to another one.
+ * @property expression The expression the predicate is built against instead of the plain column.
+ */
+public data class NestedFieldProjection(
+    public val source: ColumnSet,
+    public val expression: ExpressionWithColumnType<*>,
+)
 
 /**
  * Global options that tune how filter predicates are built.
@@ -21,11 +36,18 @@ import org.jetbrains.exposed.v1.core.Column
  * Return the [ReferenceInfo] describing the logical target to make the path filterable, or `null`
  * to leave the column unresolvable and keep the failure. Useful when a module boundary forbids the
  * physical FK but the logical one is recorded elsewhere (an annotation, a registry).
+ * @property nestedFieldResolver Replaces what a nested field path reads, given the resolved target
+ * table and the nested field name. Unlike [referenceResolver] it is consulted for every nested path,
+ * including one Exposed resolves itself, because the reference is not what needs replacing — the
+ * column behind it is. Return `null` to read the target table's own column, which is the default and
+ * keeps the emitted SQL unchanged. Useful when the readable value lives beside the target table
+ * rather than in it, as a translation does.
  */
 public data class FilterOptions(
     public val caseSensitiveStrings: Boolean = false,
     public val normalizedStringFields: Set<String> = emptySet(),
     public val referenceResolver: ((Column<*>) -> ReferenceInfo?)? = null,
+    public val nestedFieldResolver: ((Table, String) -> NestedFieldProjection?)? = null,
 )
 
 internal fun FilterOptions.usesNormalizedComparison(fieldName: String): Boolean =

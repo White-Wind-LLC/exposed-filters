@@ -82,13 +82,15 @@ internal fun predicateForField(
         ?: options.referenceResolver?.invoke(baseExpr)
         ?: error("Field $baseName is not a reference; cannot use nested property $nestedName")
 
-    val targetColumns = refInfo.referencedTable.propertyToColumnMap()
-    val targetColumn =
+    val projection = options.nestedFieldResolver?.invoke(refInfo.referencedTable, nestedName)
+    val targetColumn = projection?.expression ?: run {
+        val targetColumns = refInfo.referencedTable.propertyToColumnMap()
         checkNotNull(targetColumns[nestedName]) { "Unknown nested field: $nestedName for reference $baseName" }
+    }
 
     // Build subquery: select referenced id from target table where target predicate holds.
     val targetPredicate = predicateFor(targetColumn, filter, field)
-    val subQuery = refInfo.referencedTable
+    val subQuery = (projection?.source ?: refInfo.referencedTable)
         .selectAll()
         .andWhere {
             @Suppress("UNCHECKED_CAST")

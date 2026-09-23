@@ -424,6 +424,38 @@ Barcodes.selectAll().applyFiltersOn(Barcodes, filter, options)
 The resolver runs only after Exposed's own `referee` lookup comes back empty, so a declared reference
 always wins. Returning `null` leaves the column unresolvable and keeps the error.
 
+### Reading a nested field from somewhere other than the target table
+
+`referenceField.nestedField` reads `targetTable.nestedField`. When the value a user actually sees
+lives beside that table rather than in it — a translation row is the motivating case — the predicate
+matches the stored value while the UI shows another one. `FilterOptions.nestedFieldResolver` replaces
+what the path reads: it returns the subquery's source and the expression to compare against.
+
+```kotlin
+val options = FilterOptions(
+    nestedFieldResolver = { table, nestedField ->
+        if (table === Products && nestedField == "name") {
+            NestedFieldProjection(
+                source = Products.leftJoin(
+                    otherTable = ProductTranslations,
+                    additionalConstraint = {
+                        (ProductTranslations.productId eq Products.id) and (ProductTranslations.language eq "uk")
+                    },
+                ),
+                expression = coalesce(ProductTranslations.name, Products.name),
+            )
+        } else {
+            null
+        }
+    },
+)
+```
+
+The source must still expose the referenced id column, since the subquery compares it against the
+base column. Unlike `referenceResolver`, this one is consulted for every nested path — including a
+reference Exposed resolves itself — because the reference is not what is being replaced. Returning
+`null` reads the target table's own column, leaving the emitted SQL unchanged.
+
 ## Filtering by JSON/JSONB fields
 
 You can filter columns containing JSON or JSONB data using dot-path notation to access nested values within the JSON
