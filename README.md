@@ -8,7 +8,7 @@ with nested `AND` / `OR` / `NOT` logic, related-entity filtering, and JSON/JSONB
 
 [![Maven Central](https://img.shields.io/maven-central/v/ua.wwind.exposed-filters/exposed-filters-core)](https://central.sonatype.com/artifact/ua.wwind.exposed-filters/exposed-filters-core)
 [![License](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](LICENSE)
-[![Kotlin](https://img.shields.io/badge/kotlin-2.4.10-blue.svg?logo=kotlin)](https://kotlinlang.org)
+[![Kotlin](https://img.shields.io/badge/kotlin-2.4.20-blue.svg?logo=kotlin)](https://kotlinlang.org)
 
 ```text
    UI / client
@@ -91,13 +91,13 @@ Artifacts on Maven Central (group `ua.wwind.exposed-filters`):
 
 ## Installation
 
-Prerequisites: Kotlin 2.4.10, repository `mavenCentral()`.
+Prerequisites: Kotlin 2.4.20, repository `mavenCentral()`.
 
 ```kotlin
 dependencies {
-  implementation("ua.wwind.exposed-filters:exposed-filters-core:1.11.0")
-  implementation("ua.wwind.exposed-filters:exposed-filters-jdbc:1.11.0")
-  implementation("ua.wwind.exposed-filters:exposed-filters-rest:1.11.0")
+  implementation("ua.wwind.exposed-filters:exposed-filters-core:1.12.0")
+  implementation("ua.wwind.exposed-filters:exposed-filters-jdbc:1.12.0")
+  implementation("ua.wwind.exposed-filters:exposed-filters-rest:1.12.0")
 }
 ```
 
@@ -108,6 +108,7 @@ Pick only what you need: `core` alone for the model and DSL, `+ jdbc` to apply f
 
 | Library version | Kotlin | Ktor  | Exposed      |
 |-----------------|--------|-------|--------------|
+| 1.12.0          | 2.4.20 | 3.6.0 | 1.4.0        |
 | 1.11.0          | 2.4.10 | 3.5.2 | 1.4.0        |
 | 1.10.0          | 2.4.10 | 3.5.2 | 1.4.0        |
 | 1.9.1           | 2.4.10 | 3.5.2 | 1.4.0        |
