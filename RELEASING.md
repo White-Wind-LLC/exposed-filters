@@ -2,6 +2,8 @@
 
 - Ensure `main` is green.
 - Update `version` in `gradle.properties`.
+- Run `./gradlew :benchmark:jmh`, copy `benchmark/build/results/jmh/results.json` to
+  `benchmark/results/<version>.json` and commit it; compare with the previous version (see `benchmark/README.md`).
 - Tag the release: `git tag vX.Y.Z && git push --tags`.
 - CI (`.github/workflows/release.yml`) will:
     - build, sign, and publish to Maven Central.
