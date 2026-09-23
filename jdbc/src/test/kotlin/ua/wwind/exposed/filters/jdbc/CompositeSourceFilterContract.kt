@@ -181,7 +181,6 @@ abstract class CompositeSourceFilterContract {
         }
     }
 
-    @Disabled("GAP-1 (#8): computed fields of a subquery are not filterable, QueryAlias.columns holds only plain columns")
     @Test
     fun `subquery joined to subquery, filtered on computed fields of both`() {
         transaction {
@@ -219,7 +218,6 @@ abstract class CompositeSourceFilterContract {
         }
     }
 
-    @Disabled("GAP-1 (#8): computed fields of a subquery are not filterable, QueryAlias.columns holds only plain columns")
     @Test
     fun `cte joined to subquery`() {
         transaction {
@@ -290,7 +288,6 @@ abstract class CompositeSourceFilterContract {
         }
     }
 
-    @Disabled("GAP-1 (#8): computed fields of a subquery are not filterable, QueryAlias.columns holds only plain columns")
     @Test
     fun `the assembled result filtered as a whole, including a computed field`() {
         transaction {
@@ -356,6 +353,26 @@ abstract class CompositeSourceFilterContract {
                 .sortedBy { it.toString() }
 
             assertEquals(listOf(PRODUCT_A, PRODUCT_C), ids)
+        }
+    }
+
+    @Test
+    fun `a computed field named like a column of another source is ambiguous`() {
+        transaction {
+            val stock = CsBalances
+                .select(CsBalances.productId, CsBalances.qty.sum().alias("name"))
+                .groupBy(CsBalances.productId)
+                .alias("stock")
+            val join = CsProducts.innerJoin(stock, { CsProducts.id }, { stock[CsBalances.productId] })
+
+            val error = assertThrows(IllegalArgumentException::class.java) {
+                join.select(CsProducts.id)
+                    .applyFiltersOn(join, where(field("name", FilterOperator.EQ, "Alpha")))
+            }
+
+            val message = error.message.orEmpty()
+            assertTrue("'cs_products'" in message, message)
+            assertTrue("'stock'" in message, message)
         }
     }
 
