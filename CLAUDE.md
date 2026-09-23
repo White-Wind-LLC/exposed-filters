@@ -30,7 +30,7 @@ Three published modules plus two non-published ones (sample and benchmarks):
 - `jdbc` — depends on `core` + Exposed. Translates `FilterNode` into Exposed `Op<Boolean>`. This is the main logic module.
 - `rest` — depends on `core` + Ktor. Only responsibility: receive/parse a JSON body into a `FilterRequest` (`ApplicationCall.receiveFilterRequestOrNull`, `parseFilterRequestOrNull`). Accepts both flat and tree JSON shapes and normalizes them.
 - `example` — not published. Ktor + H2 sample app; excluded via `-PexcludeSamples=true` in CI/publish.
-- `benchmark` — not published, same exclusion. JMH suite (`src/jmh`) measuring library overhead against the equivalent hand-written Exposed DSL, per scenario. `@Setup` asserts the manual and library variants render identical SQL — when a library change breaks that, fix the scenario's manual predicate to match the intended SQL, never loosen the check. Per-release results are committed to `benchmark/results/<version>.json`; see `benchmark/README.md`.
+- `benchmark` — not published (excluded by `-PexcludeSamples=true`). CI's `build` compiles its `src/jmh` sources (`check` depends on `compileJmhKotlin`) but never runs them. JMH suite (`src/jmh`) measuring library overhead against the equivalent hand-written Exposed DSL, per scenario. `@Setup` asserts the manual and library variants render identical SQL — when a library change breaks that, fix the scenario's manual predicate to match the intended SQL, never loosen the check. Per-release results are committed to `benchmark/results/<version>.json`; see `benchmark/README.md`.
 
 All modules use `explicitApi()` — new public declarations must be explicitly marked `public`.
 

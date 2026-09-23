@@ -31,3 +31,7 @@ jmh {
     resultFormat.set("JSON")
     (project.findProperty("jmhInclude") as String?)?.let { includes.set(listOf(it)) }
 }
+
+// CI runs `build` without -PexcludeSamples; compile the benchmarks there so API changes that break them
+// surface in the PR instead of at release time. Running them stays manual.
+tasks.named("check") { dependsOn("compileJmhKotlin") }

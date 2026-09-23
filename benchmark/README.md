@@ -1,7 +1,8 @@
 # Benchmarks
 
 JMH benchmarks measuring how much time `exposed-filters` adds to a request compared with writing the same
-predicate by hand in the Exposed DSL. Not published; excluded from CI/publish by `-PexcludeSamples=true`.
+predicate by hand in the Exposed DSL. Not published (excluded from publishing by `-PexcludeSamples=true`). CI
+compiles the benchmarks as part of `build`, so an API change that breaks them fails the PR, but never runs them.
 
 ## Running
 
