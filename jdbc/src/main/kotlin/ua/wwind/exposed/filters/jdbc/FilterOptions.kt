@@ -42,7 +42,8 @@ public data class NestedFieldProjection(
  * empty, so a declared reference always wins and the resolver never changes existing behavior.
  * Return the [ReferenceInfo] describing the logical target to make the path filterable, or `null`
  * to leave the column unresolvable and keep the failure. Useful when a module boundary forbids the
- * physical FK but the logical one is recorded elsewhere (an annotation, a registry).
+ * physical FK but the logical one is recorded elsewhere (an annotation, a registry). For a column of
+ * a table alias or a subquery it receives the original table column behind the clone, never the clone.
  * @property nestedFieldResolver Replaces what a nested field path reads, given the resolved target
  * table and the nested field name. Unlike [referenceResolver] it is consulted for every nested path,
  * including one Exposed resolves itself, because the reference is not what needs replacing — the

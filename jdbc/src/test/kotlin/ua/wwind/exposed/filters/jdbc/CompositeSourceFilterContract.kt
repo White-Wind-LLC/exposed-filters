@@ -28,7 +28,6 @@ import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertThrows
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.BeforeEach
-import org.junit.jupiter.api.Disabled
 import org.junit.jupiter.api.Test
 import ua.wwind.exposed.filters.core.FieldFilter
 import ua.wwind.exposed.filters.core.FilterCombinator
@@ -506,7 +505,6 @@ abstract class CompositeSourceFilterContract {
         }
     }
 
-    @Disabled("GAP-5 (#12): a subquery column is a clone without referee, so a reference path cannot resolve")
     @Test
     fun `a reference path through a subquery column`() {
         transaction {
