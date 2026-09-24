@@ -6,7 +6,9 @@ import kotlinx.datetime.LocalDate
 import org.jetbrains.exposed.v1.core.Column
 import org.jetbrains.exposed.v1.core.ColumnType
 import org.jetbrains.exposed.v1.core.EnumerationColumnType
+import org.jetbrains.exposed.v1.core.IntegerColumnType
 import org.jetbrains.exposed.v1.core.Table
+import org.jetbrains.exposed.v1.core.VarCharColumnType
 import org.jetbrains.exposed.v1.core.alias
 import org.jetbrains.exposed.v1.core.java.UUIDColumnType
 import org.jetbrains.exposed.v1.datetime.date
@@ -149,6 +151,30 @@ object TestArrayTable : Table("test_array") {
     override val primaryKey = PrimaryKey(id)
 }
 
+/**
+ * A table whose columns are partly registered at runtime, not held by a Kotlin property. The runtime
+ * column `label` shares its SQL name with the property `label` (SQL name `label_text`).
+ */
+object TestRuntimeColumnsTable : Table("test_runtime_columns") {
+    val id: Column<Int> = integer("id")
+    val label: Column<String> = varchar("label_text", 50)
+    override val primaryKey = PrimaryKey(id)
+
+    init {
+        registerColumn<String>("colour", VarCharColumnType(20))
+        registerColumn<Int>("label", IntegerColumnType())
+    }
+
+    @Suppress("UNCHECKED_CAST")
+    fun <T> runtimeColumn(name: String): Column<T> = columns.single { it.name == name } as Column<T>
+}
+
+object TestRuntimeRefsTable : Table("test_runtime_refs") {
+    val id: Column<Int> = integer("id")
+    val itemId: Column<Int> = reference("item_id", TestRuntimeColumnsTable.id)
+    override val primaryKey = PrimaryKey(id)
+}
+
 class QueryFilterExtensionsTest {
     @BeforeEach
     fun setUp() {
@@ -189,6 +215,66 @@ class QueryFilterExtensionsTest {
             assertEquals(TestUsersTable.name, columnMap["name"])
             assertEquals(TestUsersTable.age, columnMap["age"])
             assertEquals(TestUsersTable.active, columnMap["active"])
+        }
+    }
+
+    // ---------------------------------------------------------
+    // Tests for Table.fieldMap(): columns registered at runtime
+    // ---------------------------------------------------------
+    @Nested
+    inner class RuntimeColumnTests {
+        @Test
+        fun `fieldMap exposes property columns by property name and runtime columns by SQL name`() {
+            val fields = TestRuntimeColumnsTable.fieldMap()
+
+            assertEquals(TestRuntimeColumnsTable.id, fields["id"])
+            assertEquals(TestRuntimeColumnsTable.runtimeColumn<String>("colour"), fields["colour"])
+        }
+
+        @Test
+        fun `a property name wins over a runtime column with the same SQL name`() {
+            val fields = TestRuntimeColumnsTable.fieldMap()
+
+            assertEquals(TestRuntimeColumnsTable.label, fields["label"])
+        }
+
+        @Test
+        fun `a property column is not exposed under its SQL name as well`() {
+            val fields = TestRuntimeColumnsTable.fieldMap()
+
+            assertEquals(setOf("id", "label", "colour"), fields.keys)
+        }
+
+        @Test
+        fun `a runtime column is filterable directly and through a reference`() {
+            transaction {
+                SchemaUtils.create(TestRuntimeColumnsTable, TestRuntimeRefsTable)
+                val colour = TestRuntimeColumnsTable.runtimeColumn<String>("colour")
+                val number = TestRuntimeColumnsTable.runtimeColumn<Int>("label")
+                listOf(1 to "red", 2 to "blue").forEach { (id, c) ->
+                    TestRuntimeColumnsTable.insert {
+                        it[TestRuntimeColumnsTable.id] = id
+                        it[TestRuntimeColumnsTable.label] = "item-$id"
+                        it[colour] = c
+                        it[number] = id * 10
+                    }
+                    TestRuntimeRefsTable.insert {
+                        it[TestRuntimeRefsTable.id] = id
+                        it[TestRuntimeRefsTable.itemId] = id
+                    }
+                }
+
+                val direct = TestRuntimeColumnsTable.selectAll()
+                    .applyFiltersOn(TestRuntimeColumnsTable, filterRequest { "colour" eq "blue" })
+                    .map { it[TestRuntimeColumnsTable.id] }
+                val nested = TestRuntimeRefsTable.selectAll()
+                    .applyFiltersOn(TestRuntimeRefsTable, filterRequest { "itemId.colour" eq "red" })
+                    .map { it[TestRuntimeRefsTable.id] }
+
+                assertEquals(listOf(2), direct)
+                assertEquals(listOf(1), nested)
+                SchemaUtils.drop(TestRuntimeRefsTable, TestRuntimeColumnsTable)
+            }
         }
     }
 
