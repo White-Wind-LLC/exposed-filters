@@ -25,7 +25,9 @@ import kotlin.reflect.jvm.isAccessible
 /**
  * Applies filters to a query using columns from the given [ColumnSet].
  *
- * - For [Table]: filter field names are matched against **Kotlin property names** (e.g., `warehouseId`)
+ * - For [Table]: filter field names are matched against **Kotlin property names** (e.g., `warehouseId`);
+ *   a column the table registers without a property (a CTE modelled as a table, a table built from
+ *   metadata) is matched against its **SQL column name**. A property name wins over a colliding SQL name.
  * - For other [ColumnSet] types (Join, Alias, etc.): filter field names are matched against
  *   **SQL column names** (e.g., `warehouse_id`)
  * - A computed field of a subquery ([QueryAlias]), such as `qty.sum().alias("total")`, is matched
@@ -131,12 +133,13 @@ private fun Query.applyNode(root: FilterNode, expressions: Map<String, Expressio
 
 /**
  * Converts a [ColumnSet] to a map of field names to expressions.
- * - For [Table]: uses Kotlin property names (camelCase)
+ * - For [Table]: uses Kotlin property names (camelCase), plus the SQL name of every column no
+ *   property holds (see [fieldMap])
  * - For other types (Join, Alias, etc.): uses SQL column names, plus the alias label of every
  *   computed field a subquery exposes
  */
 internal fun ColumnSet.toColumnMap(): Map<String, ExpressionWithColumnType<*>> = when (this) {
-    is Table -> this.propertyToColumnMap()
+    is Table -> this.fieldMap()
     else -> sourceFields().associate { it.name to it.expression }
 }
 
@@ -220,6 +223,23 @@ internal fun FilterNode.referencedFields(): Sequence<String> = when (this) {
 }
 
 private fun Table.sourceName(): String = (this as? Alias<*>)?.alias ?: tableName
+
+/**
+ * Every field this [Table] exposes to filters: each column held by a Kotlin property under the
+ * property name, and each column registered without one (a CTE modelled as a table, a table built
+ * from metadata) under its SQL name. A property name wins over a same-named SQL name, and a column a
+ * property holds is not exposed under its SQL name as well, so a table made of properties exposes
+ * exactly what [propertyToColumnMap] returns.
+ */
+internal fun Table.fieldMap(): Map<String, ExpressionWithColumnType<*>> {
+    val byProperty = propertyToColumnMap()
+    val covered = byProperty.values.toSet()
+    val fields = byProperty.toMutableMap()
+    for (column in columns) {
+        if (column !in covered) fields.putIfAbsent(column.name, column)
+    }
+    return fields
+}
 
 public fun Table.propertyToColumnMap(): Map<String, ExpressionWithColumnType<*>> =
     this::class.memberProperties

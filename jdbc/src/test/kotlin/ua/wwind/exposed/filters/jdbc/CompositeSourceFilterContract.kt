@@ -262,7 +262,6 @@ abstract class CompositeSourceFilterContract {
         }
     }
 
-    @Disabled("GAP-4 (#11): a Table resolves fields by Kotlin property only, columns registered at runtime are invisible")
     @Test
     fun `a single cte as the whole source`() {
         transaction {

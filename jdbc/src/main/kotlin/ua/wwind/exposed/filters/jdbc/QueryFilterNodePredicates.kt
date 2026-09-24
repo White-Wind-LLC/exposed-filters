@@ -84,7 +84,7 @@ internal fun predicateForField(
 
     val projection = options.nestedFieldResolver?.invoke(refInfo.referencedTable, nestedName)
     val targetColumn = projection?.expression ?: run {
-        val targetColumns = refInfo.referencedTable.propertyToColumnMap()
+        val targetColumns = refInfo.referencedTable.fieldMap()
         checkNotNull(targetColumns[nestedName]) { "Unknown nested field: $nestedName for reference $baseName" }
     }
 

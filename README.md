@@ -380,6 +380,9 @@ Filter by property `warehouseId` (maps to DB `warehouse_id`):
 Notes:
 
 - Property names are resolved via reflection. This also works for enums, UUIDs, booleans, numbers, and strings.
+- A column the table registers without a Kotlin property (a CTE modelled as a `Table`, a table built from metadata at
+  runtime) is filterable by its SQL column name. A property name wins over a colliding SQL name, and a column held by a
+  property is only addressable by the property name. This also applies to the nested part of `reference.field` paths.
 
 ## Filtering by related entities (references)
 
