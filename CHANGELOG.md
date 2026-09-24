@@ -2,6 +2,20 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.13.0] - 2026-09-24
+
+- JDBC: filters on aggregate expressions go to `HAVING`; new `FilterOptions.aggregateFields` for unrecognized
+  aggregates ([#10](https://github.com/White-Wind-LLC/exposed-filters/issues/10)). **Not binary-compatible** with 1.12.0: `FilterOptions` changed constructor arity,
+  recompile.
+- JDBC: computed fields of a subquery can be filtered by their alias label ([#8](https://github.com/White-Wind-LLC/exposed-filters/issues/8)).
+- JDBC: a filter on a column name shared by two joined sources now fails instead of picking one ([#9](https://github.com/White-Wind-LLC/exposed-filters/issues/9)).
+- JDBC: `Table` columns registered without a Kotlin property are filterable by SQL name ([#11](https://github.com/White-Wind-LLC/exposed-filters/issues/11)).
+- JDBC: reference paths work through table `Alias` and `QueryAlias` columns ([#12](https://github.com/White-Wind-LLC/exposed-filters/issues/12)).
+- JDBC: field resolution on a `Table` is cached per class, ~6 µs less overhead per request ([#16](https://github.com/White-Wind-LLC/exposed-filters/issues/16)).
+- New non-published JMH `benchmark` module.
+
+**Full Changelog**: https://github.com/White-Wind-LLC/exposed-filters/compare/v1.12.0...v1.13.0
+
 ## [1.12.0] - 2026-09-23
 
 - JDBC: a nested field path can read an expression instead of the target table's own column
