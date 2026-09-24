@@ -2,6 +2,49 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.13.0] - 2026-09-24
+
+- JDBC: filters on aggregate expressions go to `HAVING` (#10)
+    - A filter field backed by an aggregate (`sum`, `count`, `min`, `max`, `avg`, `stdDev*`/`var*`,
+      `groupConcat`, also when wrapped in another expression) was added to `WHERE`, which the database
+      rejects. Every entry point now splits the filter: aggregate predicates go to `andHaving`, the rest
+      keep going to `andWhere`.
+    - AND conjuncts are split one by one. An OR/NOT group that touches an aggregate moves to `HAVING`
+      whole, since splitting it would change its meaning. A filter without aggregates emits the same SQL
+      as before.
+    - Aggregates the reflective detection does not recognize (a `CustomFunction`, for example) are
+      declared through the new `FilterOptions.aggregateFields`. Filters on window functions fail with an
+      explicit error.
+    - The caller's query is never wrapped in an outer `SELECT`.
+    - **Source-compatible, not binary-compatible.** `FilterOptions` is a `data class`, so the added
+      parameter changes its constructor arity on the JVM. Code compiled against 1.12.0 must be
+      recompiled; it will not link against 1.13.0 as it stands.
+- JDBC: computed fields of a subquery can be filtered by their alias label (#8)
+    - `applyFiltersOn(queryAlias, ...)` only saw plain columns, so a field such as
+      `sum(qty).alias("total")` was an unknown filter field. Each computed field a `QueryAlias` projects
+      is now addressable by its label, including when the subquery is part of a `Join`.
+- JDBC: ambiguous column names across joined sources are rejected (#9)
+    - **Behavior change.** A name exposed by two sources of a `Join` silently resolved to one of them.
+      A filter on such a name now fails with an `IllegalArgumentException` naming the sources. Names no
+      filter uses (typically the join key) keep the join usable.
+- JDBC: `Table` columns registered without a Kotlin property are filterable (#11)
+    - Columns added at runtime (a CTE modelled as a `Table`, a table built from metadata) are exposed
+      under their SQL name. A property name wins a collision. Nested reference paths resolve the target
+      table the same way. The public `propertyToColumnMap()` is unchanged.
+- JDBC: reference paths work through table `Alias` and `QueryAlias` columns (#12)
+    - An aliased column is a clone without `referee`, so `productId.name` failed with `is not a
+      reference`. The clone is now unwrapped to its original column for `resolveReference` and
+      `referenceResolver`, while the `EXISTS` subquery still correlates with the aliased column.
+- JDBC: field resolution on a `Table` is cached per class (#16)
+    - The `memberProperties` scan behind `propertyToColumnMap()` ran on every request and was most of the
+      library's overhead. It now runs once per table class. `propertyToColumnMap()`: 6.9 → 0.45 µs for 15
+      columns, 6.4 → 0.12 µs for 3. The cache never references a table instance, so runtime tables and
+      per-request aliases stay collectable.
+- Benchmarks: new non-published `benchmark` module (JMH), comparing the library against the equivalent
+  hand-written Exposed DSL per scenario. Results per release are in `benchmark/results/`.
+
+**Full Changelog**: https://github.com/White-Wind-LLC/exposed-filters/compare/v1.12.0...v1.13.0
+
 ## [1.12.0] - 2026-09-23
 
 - JDBC: a nested field path can read an expression instead of the target table's own column

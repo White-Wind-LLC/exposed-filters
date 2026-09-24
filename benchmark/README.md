@@ -47,7 +47,7 @@ Numbers are only comparable across runs on the same machine and JDK. Baselines s
 | Version | Machine | JDK |
 |---|---|---|
 | 1.12.0 | Apple M4 Pro | OpenJDK 21.0.12 |
-| unreleased (#16) | Apple M2 Max | OpenJDK 17.0.11 |
+| 1.13.0 | Apple M2 Max | OpenJDK 17.0.11 |
 
 ### Baseline 1.12.0 (µs per request, build + render SQL, no DB)
 
@@ -64,11 +64,11 @@ On a `Table`, most of the overhead is `propertyToColumnMap()` (~6–7 µs regard
 recomputed on every request. Full execution on in-memory H2 takes 90–330 µs per query, so the overhead is
 within run-to-run noise there, and a smaller share still against a networked database.
 
-### Unreleased: per-class property cache (#16)
+### 1.13.0: per-class property cache (#16)
 
 `propertyToColumnMap()` now caches the `memberProperties` scan per table class and only reads the properties
 per call. Recorded on a different machine and JDK than 1.12.0, so compare columns within this table, not
-against the baseline above. `benchmark/results/unreleased.json` is to be renamed to the version it ships in.
+against the baseline above.
 
 | Scenario | manual (`a1`) | library (`a2`) | overhead | field resolution (`a2 − a3`) | + JSON parse (`b`) |
 |---|---|---|---|---|---|
