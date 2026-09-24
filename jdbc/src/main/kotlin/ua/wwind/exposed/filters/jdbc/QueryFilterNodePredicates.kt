@@ -1,5 +1,6 @@
 package ua.wwind.exposed.filters.jdbc
 
+import org.jetbrains.exposed.v1.core.Alias
 import org.jetbrains.exposed.v1.core.Column
 import org.jetbrains.exposed.v1.core.ExpressionWithColumnType
 import org.jetbrains.exposed.v1.core.JsonColumnMarker
@@ -78,8 +79,11 @@ internal fun predicateForField(
                 "not for computed expressions."
     }
 
-    val refInfo = resolveReference(baseExpr)
-        ?: options.referenceResolver?.invoke(baseExpr)
+    // A subquery or alias column is a clone without `referee`: resolve the reference on the column it
+    // projects, but keep comparing against the clone, which is what the outer query can see.
+    val originalColumn = baseExpr.originalColumn()
+    val refInfo = resolveReference(originalColumn)
+        ?: options.referenceResolver?.invoke(originalColumn)
         ?: error("Field $baseName is not a reference; cannot use nested property $nestedName")
 
     val projection = options.nestedFieldResolver?.invoke(refInfo.referencedTable, nestedName)
@@ -120,6 +124,19 @@ public data class ReferenceInfo(
     public val referencedIdColumn: Column<*>,
     public val referencedTable: Table,
 )
+
+/**
+ * The table column behind [this] one. Exposed exposes a column of a table [Alias] — and of a
+ * `QueryAlias`, which clones each column onto `table.alias(queryAlias.alias)` — as a clone on an
+ * [Alias]; this unwraps such clones, through nested aliases, back to the column they were made from.
+ */
+internal fun Column<*>.originalColumn(): Column<*> {
+    var column: Column<*> = this
+    while (true) {
+        val alias = column.table as? Alias<*> ?: return column
+        column = alias.originalColumn(column) ?: return column
+    }
+}
 
 internal fun resolveReference(column: Column<*>): ReferenceInfo? {
     // Try common Exposed internal names reflectively to locate the referenced column.

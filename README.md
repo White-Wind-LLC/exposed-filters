@@ -389,6 +389,8 @@ Notes:
 - You can filter by a field of a related entity using dot-paths on reference columns: `referenceField.nestedField`.
 - Under the hood, this is implemented via an `EXISTS` subquery against the referenced table.
 - Currently supports one-level nesting on reference columns.
+- A column of a table alias or a subquery (`QueryAlias`) behaves like the reference it projects: the path
+  resolves through the original column and the subquery is correlated with the aliased one.
 
 Example: filter products by warehouse name prefix
 
@@ -426,7 +428,9 @@ Barcodes.selectAll().applyFiltersOn(Barcodes, filter, options)
 ```
 
 The resolver runs only after Exposed's own `referee` lookup comes back empty, so a declared reference
-always wins. Returning `null` leaves the column unresolvable and keeps the error.
+always wins. Returning `null` leaves the column unresolvable and keeps the error. For a column of a
+table alias or a subquery, the resolver receives the original table column behind it, so an identity
+check like the one above works through aliases too.
 
 ### Reading a nested field from somewhere other than the target table
 

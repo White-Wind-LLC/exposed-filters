@@ -4,9 +4,11 @@ package ua.wwind.exposed.filters.jdbc
 
 import org.jetbrains.exposed.v1.core.Column
 import org.jetbrains.exposed.v1.core.Table
+import org.jetbrains.exposed.v1.core.alias
 import org.jetbrains.exposed.v1.jdbc.Database
 import org.jetbrains.exposed.v1.jdbc.SchemaUtils
 import org.jetbrains.exposed.v1.jdbc.insert
+import org.jetbrains.exposed.v1.jdbc.select
 import org.jetbrains.exposed.v1.jdbc.selectAll
 import org.jetbrains.exposed.v1.jdbc.transactions.transaction
 import org.junit.jupiter.api.AfterEach
@@ -185,6 +187,42 @@ class QueryFilterReferenceFieldsTest {
                     .toList()
             }
             assertTrue(failure.message.orEmpty().contains("is not a reference"), failure.message)
+        }
+    }
+
+    @Test
+    fun `a physical reference resolves through a table alias column`() {
+        transaction {
+            val barcodes = RefBarcodesTable.alias("b")
+            val rows = barcodes
+                .selectAll()
+                .applyFiltersOn(barcodes, leaf("lot_ref_id.name", "Alpha"))
+                .map { it[barcodes[RefBarcodesTable.barcode]] }
+            assertEquals(listOf("BC-ALPHA"), rows)
+        }
+    }
+
+    @Test
+    fun `the resolver receives the original column behind a table alias column`() {
+        transaction {
+            val barcodes = RefBarcodesTable.alias("b")
+            val rows = barcodes
+                .selectAll()
+                .applyFiltersOn(barcodes, leaf("lot_id.name", "Alpha"), options = manualLotReference)
+                .map { it[barcodes[RefBarcodesTable.barcode]] }
+            assertEquals(listOf("BC-ALPHA"), rows)
+        }
+    }
+
+    @Test
+    fun `the resolver receives the original column behind a subquery column`() {
+        transaction {
+            val lots = RefBarcodesTable.select(RefBarcodesTable.barcode, RefBarcodesTable.lotId).alias("lots")
+            val rows = lots
+                .selectAll()
+                .applyFiltersOn(lots, leaf("lot_id.name", "Beta"), options = manualLotReference)
+                .map { it[lots[RefBarcodesTable.barcode]] }
+            assertEquals(listOf("BC-BETA"), rows)
         }
     }
 }
