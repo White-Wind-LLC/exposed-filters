@@ -18,9 +18,6 @@ import ua.wwind.exposed.filters.core.FilterGroup
 import ua.wwind.exposed.filters.core.FilterLeaf
 import ua.wwind.exposed.filters.core.FilterNode
 import ua.wwind.exposed.filters.core.FilterRequest
-import kotlin.reflect.KProperty1
-import kotlin.reflect.full.memberProperties
-import kotlin.reflect.jvm.isAccessible
 
 /**
  * Applies filters to a query using columns from the given [ColumnSet].
@@ -242,13 +239,9 @@ internal fun Table.fieldMap(): Map<String, ExpressionWithColumnType<*>> {
 }
 
 public fun Table.propertyToColumnMap(): Map<String, ExpressionWithColumnType<*>> =
-    this::class.memberProperties
+    columnProperties()
         .mapNotNull { prop ->
-            @Suppress("UNCHECKED_CAST")
-            val p = prop as? KProperty1<Any, *> ?: return@mapNotNull null
-            // Some properties can be non-public on generated tables; make accessible defensively.
-            p.isAccessible = true
-            val value = runCatching { p.get(this) }.getOrNull()
+            val value = runCatching { prop.get(this) }.getOrNull()
             if (value is Column<*>) {
                 prop.name to value
             } else {

@@ -9,10 +9,7 @@ import org.jetbrains.exposed.v1.core.ExpressionWithColumnType
 import org.jetbrains.exposed.v1.core.IColumnType
 import java.util.concurrent.ConcurrentHashMap
 import kotlin.reflect.KClass
-import kotlin.reflect.KProperty1
 import kotlin.reflect.KType
-import kotlin.reflect.full.memberProperties
-import kotlin.reflect.jvm.isAccessible
 
 /*
  * Enum column support.
@@ -32,7 +29,8 @@ import kotlin.reflect.jvm.isAccessible
  * EnumerationColumnType carry the enum class themselves; CustomEnumerationColumnType does not - it
  * keeps only the fromDb/toDb lambdas, which compile to invokedynamic lambdas with fully erased
  * signatures. For those the class is recovered from the Kotlin property that declares the column
- * (`val status: Column<Status>` -> Status), the same reflection propertyToColumnMap() already uses.
+ * (`val status: Column<Status>` -> Status), through the same per-class property cache
+ * propertyToColumnMap() uses (see TableColumnProperties.kt).
  */
 
 /**
@@ -97,7 +95,7 @@ private val NO_ENUM_CLASS = Any()
 /**
  * Memoized per column type. Each customEnumeration() call creates its own column type instance and
  * the type does not override equals/hashCode, so identity keys the cache correctly - and the lookup
- * it replaces is a full `memberProperties` scan, which is far too slow to repeat per filter value.
+ * it replaces reads every column property of the table, which is too slow to repeat per filter value.
  */
 private val declaredEnumClasses = ConcurrentHashMap<CustomEnumerationColumnType<*>, Any>()
 
@@ -122,12 +120,8 @@ private fun findDeclaredEnumClass(expr: ExpressionWithColumnType<*>): Class<out 
     // An aliased column is a distinct instance owned by the alias; the properties live on the table
     // it delegates to, and column names survive aliasing.
     val table = column.table.let { if (it is Alias<*>) it.delegate else it }
-    return table::class.memberProperties.firstNotNullOfOrNull { prop ->
-        @Suppress("UNCHECKED_CAST")
-        val typed = prop as? KProperty1<Any, *> ?: return@firstNotNullOfOrNull null
-        // Some properties can be non-public on generated tables; make accessible defensively.
-        typed.isAccessible = true
-        val value = runCatching { typed.get(table) }.getOrNull()
+    return table.columnProperties().firstNotNullOfOrNull { prop ->
+        val value = runCatching { prop.get(table) }.getOrNull()
         if (value is Column<*> && value.name == column.name) {
             prop.returnType.firstEnumArgument()
         } else {

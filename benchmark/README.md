@@ -47,6 +47,7 @@ Numbers are only comparable across runs on the same machine and JDK. Baselines s
 | Version | Machine | JDK |
 |---|---|---|
 | 1.12.0 | Apple M4 Pro | OpenJDK 21.0.12 |
+| unreleased (#16) | Apple M2 Max | OpenJDK 17.0.11 |
 
 ### Baseline 1.12.0 (µs per request, build + render SQL, no DB)
 
@@ -62,6 +63,23 @@ Numbers are only comparable across runs on the same machine and JDK. Baselines s
 On a `Table`, most of the overhead is `propertyToColumnMap()` (~6–7 µs regardless of column count), which is
 recomputed on every request. Full execution on in-memory H2 takes 90–330 µs per query, so the overhead is
 within run-to-run noise there, and a smaller share still against a networked database.
+
+### Unreleased: per-class property cache (#16)
+
+`propertyToColumnMap()` now caches the `memberProperties` scan per table class and only reads the properties
+per call. Recorded on a different machine and JDK than 1.12.0, so compare columns within this table, not
+against the baseline above. `benchmark/results/unreleased.json` is to be renamed to the version it ships in.
+
+| Scenario | manual (`a1`) | library (`a2`) | overhead | field resolution (`a2 − a3`) | + JSON parse (`b`) |
+|---|---|---|---|---|---|
+| SIMPLE_EQ | 5.0 | 6.7 | +1.6 | ~1.2 | 7.2 |
+| AND_4_FIELDS | 6.9 | 9.5 | +2.7 | ~1.2 | 11.0 |
+| OR_NOT_IN_BETWEEN | 6.3 | 8.7 | +2.4 | ~1.1 | 12.4 |
+| NESTED_REF | 7.3 | 11.2 | +3.9 | ~1.5 (both tables now cached) | 12.0 |
+| JOIN_COLUMNS | 7.1 | 10.5 | +3.4 | within noise | 11.5 |
+| STOCK_COMPUTED | 3.0 | 4.9 | +1.9 | ~1.2 | 6.1 |
+
+`propertyToColumnMap()` in isolation: 0.45 µs for 15 columns, 0.12 µs for 3 (was ~6–7 µs for either).
 
 The suite is intentionally not run in CI: shared runners are noisy well beyond the microsecond differences
 measured here.
