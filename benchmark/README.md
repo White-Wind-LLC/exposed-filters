@@ -48,6 +48,7 @@ Numbers are only comparable across runs on the same machine and JDK. Baselines s
 |---|---|---|
 | 1.12.0 | Apple M4 Pro | OpenJDK 21.0.12 |
 | 1.13.0 | Apple M2 Max | OpenJDK 17.0.11 |
+| 1.14.0 | Apple M4 Pro | OpenJDK 17.0.20 |
 
 ### Baseline 1.12.0 (µs per request, build + render SQL, no DB)
 
@@ -80,6 +81,23 @@ against the baseline above.
 | STOCK_COMPUTED | 3.0 | 4.9 | +1.9 | ~1.2 | 6.1 |
 
 `propertyToColumnMap()` in isolation: 0.45 µs for 15 columns, 0.12 µs for 3 (was ~6–7 µs for either).
+
+### 1.14.0
+
+No change on the measured paths; `IN_HIERARCHY` (#22) and dotted map keys (#23) add no scenario of their own
+yet. Recorded on a different machine than 1.13.0, so absolute numbers are lower across the board, manual
+included; the overhead stays at the same share of `a1`.
+
+| Scenario | manual (`a1`) | library (`a2`) | overhead | field resolution (`a2 − a3`) | + JSON parse (`b`) |
+|---|---|---|---|---|---|
+| SIMPLE_EQ | 3.6 | 4.6 | +1.0 | ~0.2 | 5.1 |
+| AND_4_FIELDS | 4.6 | 6.6 | +2.0 | ~0.7 | 7.9 |
+| OR_NOT_IN_BETWEEN | 4.6 | 6.2 | +1.6 | ~0.8 | 8.6 |
+| NESTED_REF | 5.8 | 7.9 | +2.1 | ~0.9 | 8.5 |
+| JOIN_COLUMNS | 5.2 | 7.6 | +2.5 | within noise | 8.3 |
+| STOCK_COMPUTED | 2.1 | 3.4 | +1.3 | ~0.8 | 4.2 |
+
+`propertyToColumnMap()` in isolation: 0.35 µs for 15 columns, 0.09 µs for 3.
 
 The suite is intentionally not run in CI: shared runners are noisy well beyond the microsecond differences
 measured here.
