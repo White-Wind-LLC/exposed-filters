@@ -2,6 +2,14 @@
 
 All notable changes to this project will be documented in this file.
 
+## [Unreleased]
+
+- New `IN_HIERARCHY` operator: matches tree nodes and all their descendants through a recursive CTE;
+  trees are auto-detected from a single self-reference or declared with the new
+  `FilterOptions.hierarchyResolver` ([#22](https://github.com/White-Wind-LLC/exposed-filters/issues/22)).
+  **Not binary-compatible** with 1.13.0: `FilterOptions` changed constructor arity, recompile.
+- JDBC: `EQ`/`IN` on an auto-increment `EntityID` id (`IntIdTable.id`) no longer fail with "Unsupported".
+
 ## [1.13.0] - 2026-09-24
 
 - JDBC: filters on aggregate expressions go to `HAVING`; new `FilterOptions.aggregateFields` for unrecognized

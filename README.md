@@ -47,7 +47,7 @@ One reusable mechanism handles every endpoint, every operator, and arbitrarily n
 - 🔗 **Related-entity filtering** — filter by a referenced table's field (`warehouseId.name`) via an `EXISTS` subquery.
 - 🧩 **JSON / JSONB path filtering** — drill into JSON columns (`payload.customer.address.city`).
 - 🔤 **Case-insensitive by default** — with an opt-in, index-friendly mode and a fully case-sensitive mode.
-- 🧮 **Rich operator set** — `EQ`, `NEQ`, `CONTAINS`, `STARTS_WITH`, `ENDS_WITH`, `GT/GTE/LT/LTE`, `IN`, `NOT_IN`, `BETWEEN`, `IS_NULL`, `IS_NOT_NULL`.
+- 🧮 **Rich operator set** — `EQ`, `NEQ`, `CONTAINS`, `STARTS_WITH`, `ENDS_WITH`, `GT/GTE/LT/LTE`, `IN`, `NOT_IN`, `IN_HIERARCHY`, `BETWEEN`, `IS_NULL`, `IS_NOT_NULL`.
 - 🛠️ **Kotlin DSL builder** — build, modify, and compose filters in code with an infix DSL.
 - 🧬 **Custom type mappers** — support any column type (`BigDecimal`, value classes, custom types …).
 - 🪢 **Unions, joins & computed columns** — map field names to arbitrary Exposed expressions.
@@ -76,6 +76,7 @@ Artifacts on Maven Central (group `ua.wwind.exposed-filters`):
 - [JSON serialization](#json-serialization)
 - [Field naming in filters](#field-naming-in-filters)
 - [Filtering by related entities (references)](#filtering-by-related-entities-references)
+- [Filtering trees (IN_HIERARCHY)](#filtering-trees-in_hierarchy)
 - [Filtering by JSON/JSONB fields](#filtering-by-jsonjsonb-fields)
 - [Case-insensitive matching and indexing](#case-insensitive-matching-and-indexing)
 - [Validation and errors](#validation-and-errors)
@@ -248,6 +249,7 @@ val filter = filterRequest {
   // Collections
   inList("status", listOf("A", "B", "C"))
   notInList("status", listOf("DELETED", "ARCHIVED"))
+  inHierarchy("categoryId", 5)  // category 5 and all its descendants
 
   // Range
   between("age", 18, 65)
@@ -485,6 +487,62 @@ or, worse, bind to the same table in the outer query and match the wrong rows.
 Unlike `referenceResolver`, this one is consulted for every nested path — including a reference
 Exposed resolves itself — because the reference is not what is being replaced. Returning `null` reads
 the target table's own column, leaving the emitted SQL unchanged.
+
+## Filtering trees (`IN_HIERARCHY`)
+
+A tree stored through a nullable self-reference (`parentId` → `id`) — folders, categories, groups — can be
+filtered by "this node or any of its descendants" without resolving the descendants yourself:
+
+```json
+{ "filters": { "categoryId": [{ "op": "IN_HIERARCHY", "values": ["5", "9"] }] } }
+```
+
+```kotlin
+filterRequest { inHierarchy("categoryId", 5, 9) }
+```
+
+The database resolves the descendants at query time, so a stored filter never goes stale:
+
+```sql
+category_id IN (WITH RECURSIVE ef_tree(id) AS (
+  SELECT categories.id FROM categories WHERE categories.id IN (?, ?)
+  UNION
+  SELECT ef_child.id FROM categories ef_child INNER JOIN ef_tree ON ef_child.parent_id = ef_tree.id
+) SELECT ef_tree.id FROM ef_tree)
+```
+
+What the field means depends on the column:
+
+| Field | Matches |
+|-------|---------|
+| a foreign key into the tree (`Products.categoryId`) | rows in the given nodes or any descendant |
+| the tree's own id (`Categories.id`) | the given nodes and their descendants |
+| the tree's parent column (`Categories.parentId`) | strict descendants of the given nodes |
+
+The tree is found automatically when the table has exactly one column referencing its own id
+(`reference("parent_id", id)`). Otherwise — a parent link without a physical foreign key, or a table with
+several self-references — declare it with `FilterOptions.hierarchyResolver`. It is consulted first and can
+override auto-detection; returning `null` falls back to it:
+
+```kotlin
+val options = FilterOptions(
+    hierarchyResolver = { column ->
+        if (column == Folders.id) HierarchyInfo(Folders.id, Folders.parentId) else null
+    },
+)
+```
+
+- Values are parsed and compared like `IN` (custom mappers, `EntityID`, case-insensitive string ids).
+  Empty `values` match nothing.
+- It works inside `AND`/`OR`/`NOT` groups and on reference paths (`productId.categoryId`).
+- A row whose column is `NULL` never matches — and, like `NOT_IN`, drops out under `NOT` too.
+- Not supported for JSON paths, array columns or computed expressions; a column with no detectable tree
+  fails with an error pointing at `hierarchyResolver`.
+- The SQL is standard `WITH RECURSIVE` inside a subquery: tested on PostgreSQL and H2, expected to work on
+  MySQL 8+ and SQLite. Oracle and SQL Server are not supported.
+- Cyclic data (a node that is its own ancestor) terminates on PostgreSQL, whose recursive `UNION` drops
+  rows it has already produced. H2 does not, and such a query runs until it times out — keep trees acyclic
+  there.
 
 ## Filtering by JSON/JSONB fields
 
@@ -761,6 +819,7 @@ Notes:
 - Equality: `EQ`, `NEQ`
 - String search: `CONTAINS`, `STARTS_WITH`, `ENDS_WITH`
 - Sets: `IN`, `NOT_IN` (including array and JSON fields)
+- Trees: `IN_HIERARCHY` (table columns only, see [Filtering trees](#filtering-trees-in_hierarchy))
 - Ranges and comparisons: `BETWEEN`, `GT`, `GTE`, `LT`, `LTE`
 - Nullability: `IS_NULL`, `IS_NOT_NULL`
 
