@@ -47,12 +47,13 @@ internal fun hierarchyPredicate(
 }
 
 /**
- * The tree [column] points into: the column it references (or the column itself when it references
- * nothing) is the tree's id, and the tree's parent link is the single column of that table referencing
- * it back.
+ * The tree [column] points into: [FilterOptions.hierarchyResolver]'s answer when it has one; otherwise
+ * the column it references (or the column itself when it references nothing) is the tree's id, and the
+ * tree's parent link is the single column of that table referencing it back.
  */
 context(options: FilterOptions)
 internal fun resolveHierarchy(column: Column<*>, fieldName: String): HierarchyInfo {
+    options.hierarchyResolver?.invoke(column)?.let { return it }
     val idColumn = resolveReference(column)?.referencedIdColumn ?: column
     val tree = idColumn.table
     val parents = tree.columns.filter { resolveReference(it)?.referencedIdColumn == idColumn }

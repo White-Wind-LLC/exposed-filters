@@ -55,6 +55,13 @@ public data class NestedFieldProjection(
  * instead of `WHERE`. Exposed's built-in aggregates (`sum()`, `count()`, `min()`, `max()`, `avg()`,
  * the standard deviations and variances, `groupConcat()`), including wrapped in another expression,
  * are detected without listing them here. Matching is by exact field name as written in the filter.
+ * @property hierarchyResolver Describes the tree a column filtered with `IN_HIERARCHY` points into, as
+ * a [HierarchyInfo] of the tree's id and parent columns. It is consulted first, so it can override
+ * auto-detection — which takes the column's referenced id (or the column itself) as the tree's id and
+ * the single column of that table referencing it back as the parent. Return `null` to fall back to
+ * auto-detection. Needed for a parent link with no physical foreign key and for a table with several
+ * self-references. For a column of a table alias or a subquery it receives the original table column
+ * behind the clone, never the clone.
  */
 public data class FilterOptions(
     public val caseSensitiveStrings: Boolean = false,
@@ -62,6 +69,7 @@ public data class FilterOptions(
     public val referenceResolver: ((Column<*>) -> ReferenceInfo?)? = null,
     public val nestedFieldResolver: ((Table, String) -> NestedFieldProjection?)? = null,
     public val aggregateFields: Set<String> = emptySet(),
+    public val hierarchyResolver: ((Column<*>) -> HierarchyInfo?)? = null,
 )
 
 internal fun FilterOptions.usesNormalizedComparison(fieldName: String): Boolean =

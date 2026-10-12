@@ -17,6 +17,7 @@ import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertThrows
 import org.junit.jupiter.api.Assertions.assertTrue
+import org.junit.jupiter.api.Assumptions.assumeTrue
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
 import ua.wwind.exposed.filters.core.FieldFilter
@@ -98,6 +99,12 @@ internal object HTagged : Table("h_tagged") {
 abstract class QueryFilterHierarchyContract {
 
     protected abstract fun connect()
+
+    /**
+     * Whether a recursive `UNION` stops on cyclic data. PostgreSQL deduplicates against the rows already
+     * produced and stops; H2 2.4 does not and runs until the query times out.
+     */
+    protected open val stopsOnCycles: Boolean = true
 
     private val allTables = arrayOf(HOrders, HProducts, HCategories, HNodes, HFolders, HCodes, ECategories)
 
@@ -345,6 +352,70 @@ abstract class QueryFilterHierarchyContract {
         assertFalse(sql.contains(" UNION ALL "), sql)
         assertFalse(sql.contains("2, 5") || sql.contains("(2,5)"), "anchor values must be bound: $sql")
         assertTrue(sql.contains("?"), sql)
+    }
+
+    // ----- Resolver -----
+
+    private val folderTree = FilterOptions(
+        hierarchyResolver = { column ->
+            if (column == HFolders.id) HierarchyInfo(HFolders.id, HFolders.parentId) else null
+        },
+    )
+
+    private fun folderNames(filter: FilterRequest, options: FilterOptions): Set<String> = transaction {
+        HFolders.selectAll().applyFiltersOn(HFolders, filter, options).map { it[HFolders.name] }.toSet()
+    }
+
+    @Test
+    fun `the resolver describes a logical-only tree`() {
+        assertEquals(setOf("d", "e"), folderNames(hier("id", 4), folderTree))
+    }
+
+    @Test
+    fun `cyclic data terminates`() {
+        assumeTrue(stopsOnCycles, "this database does not stop a recursive UNION on cycles")
+        assertEquals(setOf("a", "b", "c"), folderNames(hier("id", 1), folderTree))
+    }
+
+    @Test
+    fun `the resolver overrides auto-detection`() {
+        val byMerge = FilterOptions(
+            hierarchyResolver = { column ->
+                if (column == HNodes.id) HierarchyInfo(HNodes.id, HNodes.mergedIntoId) else null
+            },
+        )
+        val names = transaction {
+            HNodes.selectAll().applyFiltersOn(HNodes, hier("id", 1), byMerge).map { it[HNodes.name] }.toSet()
+        }
+        assertEquals(setOf("node1", "node3"), names)
+    }
+
+    @Test
+    fun `the resolver returning null falls back to auto-detection`() {
+        val nothing = FilterOptions(hierarchyResolver = { null })
+        assertEquals(setOf("Gaming X", "Ultrabook", "Desktop"), productNames(hier("categoryId", 2), nothing))
+    }
+
+    @Test
+    fun `the resolver receives the original column behind an alias`() {
+        val seen = mutableListOf<Column<*>>()
+        val recording = FilterOptions(hierarchyResolver = { column -> seen += column; null })
+        transaction {
+            val alias = HProducts.alias("hp")
+            alias.selectAll().applyFiltersOn(alias, hier("category_id", 2), recording).toList()
+        }
+        assertEquals(listOf<Column<*>>(HProducts.categoryId), seen)
+    }
+
+    @Test
+    fun `a parent column on another table is rejected`() {
+        val wrong = FilterOptions(
+            hierarchyResolver = { HierarchyInfo(HCategories.id, HProducts.categoryId) },
+        )
+        val error = assertThrows(IllegalArgumentException::class.java) {
+            productNames(hier("categoryId", 1), wrong)
+        }
+        assertTrue(error.message!!.contains("is not on the tree's table h_categories"), error.message)
     }
 
     // ----- Errors -----
