@@ -10,6 +10,10 @@ All notable changes to this project will be documented in this file.
   **Not binary-compatible** with 1.13.0: `FilterOptions` changed constructor arity, recompile.
   An exhaustive `when` over `FilterOperator` no longer compiles, and already compiled code throws
   `NoWhenBranchMatchedException` on `IN_HIERARCHY`: add the branch.
+- JDBC: dotted keys of an explicit `applyFilters(map)` map (`product.category`) resolve as whole keys; a dotted field
+  resolves by the longest prefix that is a key, so JSON and reference paths below a dotted key still work
+  ([#23](https://github.com/White-Wind-LLC/exposed-filters/issues/23)). A map holding both `a` and `a.b` now sends
+  the field `a.b` to the key `a.b` instead of a path below `a`.
 - JDBC: filters on an `autoIncrement()` column (`integer("id").autoIncrement()`, `IntIdTable.id`) no longer fail
   with "Unsupported equality/IN …"; the value type behind Exposed's `AutoIncColumnType` is now recognized.
 

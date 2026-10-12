@@ -55,8 +55,8 @@ internal fun predicateForField(
     filter: FieldFilter,
 ): Op<Boolean> {
     val field = filter.field
-    val dotIndex = field.indexOf('.')
-    if (dotIndex < 0) {
+    val (baseName, path) = splitField(field) { it in expressions }
+    if (path == null) {
         val expr = requireNotNull(expressions[field]) { "Unknown filter field: $field" }
         return predicateFor(expr, filter, field)
     }
@@ -64,9 +64,8 @@ internal fun predicateForField(
     // Dot-path support:
     // 1) JSON/JSONB field path: payload.a.b.c
     // 2) Existing reference nested field: referenceField.nestedField
-    val baseName = field.substring(0, dotIndex)
-    val pathSegments = field.substring(dotIndex + 1).split('.')
-    require(pathSegments.isNotEmpty() && pathSegments.none { it.isEmpty() }) { "Invalid nested field path: $field" }
+    val pathSegments = path.split('.')
+    require(pathSegments.none { it.isEmpty() }) { "Invalid nested field path: $field" }
 
     val baseExpr = checkNotNull(expressions[baseName]) { "Unknown filter field: $baseName" }
     if (baseExpr.columnType is JsonColumnMarker) {
@@ -111,6 +110,31 @@ internal fun predicateForField(
         }
 
     return exists(subQuery)
+}
+
+/**
+ * A filter field split into the [baseName] it is looked up by and the dot [path] below it; `null` when
+ * the whole field is the name.
+ */
+internal data class FieldPath(val baseName: String, val path: String?)
+
+/**
+ * Splits [field] at the longest dot-delimited prefix [isKey] accepts, so a map can expose namespaced
+ * keys such as `product.category` while `product.attributes.color` still reads a JSON path below the
+ * key `product.attributes`. When no prefix is a key, the base is the first segment: that is what an
+ * unknown-field error names, and what every map without dotted keys resolved to before.
+ */
+internal fun splitField(field: String, isKey: (String) -> Boolean): FieldPath {
+    val ends = buildList {
+        var dot = field.indexOf('.')
+        while (dot >= 0) {
+            add(dot)
+            dot = field.indexOf('.', dot + 1)
+        }
+        add(field.length)
+    }
+    val end = ends.lastOrNull { isKey(field.substring(0, it)) } ?: ends.first()
+    return FieldPath(field.substring(0, end), if (end == field.length) null else field.substring(end + 1))
 }
 
 /**

@@ -48,7 +48,7 @@ context(options: FilterOptions)
 internal fun FilterNode.splitByClause(expressions: Map<String, ExpressionWithColumnType<*>>): ClauseSplit {
     val kinds = HashMap<String, Boolean>()
     val isAggregate = { field: String ->
-        val baseName = field.substringBefore('.')
+        val baseName = splitField(field) { it in expressions || it in options.aggregateFields }.baseName
         kinds.getOrPut(baseName) { isAggregateField(baseName, expressions[baseName]) }
     }
     if (referencedFields().none { isAggregate(it) }) return ClauseSplit(where = this, having = null)

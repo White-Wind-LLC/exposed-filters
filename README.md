@@ -1064,6 +1064,30 @@ join.select(stock[Balances.productId])
 Instead of using `applyFiltersOn(table, filter)`, use the lower-level `applyFilters(expressionMap, filter)` method and
 provide an explicit mapping from field names to SQL expressions.
 
+### Namespaced (dotted) keys
+
+Map keys may contain dots, which is a natural way to expose the fields of a join under stable names that do not depend
+on the underlying column names. A dotted filter field resolves by the **longest prefix that is a key in the map**; the
+usual dot-path rules then apply to the rest:
+
+```kotlin
+val join = Orders.innerJoin(Products, { Orders.productId }, { Products.id })
+val columns = mapOf(
+    "order.qty" to Orders.qty,
+    "customerId" to Orders.customerId,          // reference column
+    "product.category" to Products.category,
+    "product.attributes" to Products.attributes, // JSON/JSONB column
+)
+
+join.selectAll().applyFilters(columns, filterRequest {
+    "product.category" eq "tools"         // the whole key product.category
+    "product.attributes.color" eq "red"   // JSON path `color` below product.attributes
+    "customerId.name" eq "Acme"           // nested reference field, as before
+})
+```
+
+A map without dotted keys behaves as before: the longest matching prefix is still the segment before the first dot.
+
 ### Example: Union query with mixed sources
 
 Consider a query that combines employees and contractors into a unified result set:
