@@ -40,8 +40,9 @@ internal fun predicateFor(
     filter: FieldFilter,
     fieldName: String
 ): Op<Boolean> {
-    // Empty array handling: return FALSE for IN/BETWEEN, TRUE for NOT_IN.
+    // Empty array handling: return FALSE for IN/IN_HIERARCHY/BETWEEN, TRUE for NOT_IN.
     if ((filter.operator == FilterOperator.IN ||
+                filter.operator == FilterOperator.IN_HIERARCHY ||
                 filter.operator == FilterOperator.BETWEEN) &&
         filter.values.isEmpty()
     ) {
@@ -69,7 +70,7 @@ internal fun predicateFor(
         FilterOperator.LTE -> compareLessEq(expr, filter.values.firstOrNull(), fieldName)
         FilterOperator.IS_NULL -> expr.isNull()
         FilterOperator.IS_NOT_NULL -> expr.isNotNull()
-        FilterOperator.IN_HIERARCHY -> error("IN_HIERARCHY is not implemented yet: '$fieldName'")
+        FilterOperator.IN_HIERARCHY -> hierarchyPredicate(expr, filter.values, fieldName)
     }
 }
 

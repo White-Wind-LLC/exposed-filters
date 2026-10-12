@@ -1,5 +1,6 @@
 package ua.wwind.exposed.filters.jdbc
 
+import org.jetbrains.exposed.v1.core.AutoIncColumnType
 import org.jetbrains.exposed.v1.core.Column
 import org.jetbrains.exposed.v1.core.EntityIDColumnType
 import org.jetbrains.exposed.v1.core.IColumnType
@@ -91,5 +92,6 @@ internal fun rawColumnTypeOf(column: Column<*>, fieldName: String): IColumnType<
     if (idColumn == null) {
         error("Cannot access idColumn for EntityID field '$fieldName'")
     }
-    return idColumn.columnType
+    // `IntIdTable.id` and the like are auto-increment: the raw type sits behind `AutoIncColumnType`.
+    return (idColumn.columnType as? AutoIncColumnType<*>)?.delegate ?: idColumn.columnType
 }
