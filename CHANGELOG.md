@@ -4,6 +4,14 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.14.1] - 2026-10-12
+
+- REST: built against Ktor 3.5.2 instead of 3.6.0, so the module runs on a Ktor 3.5 server. A library compiled
+  against a newer Ktor lifts `ktor-server-core` past the application's own Ktor plugins and fails only at
+  runtime (`NoSuchMethodError`); one built against an older Ktor keeps working on a newer one. No code changes.
+
+**Full Changelog**: https://github.com/White-Wind-LLC/exposed-filters/compare/v1.14.0...v1.14.1
+
 ## [1.14.0] - 2026-10-12
 
 - New `IN_HIERARCHY` operator: matches tree nodes and all their descendants through a recursive CTE;
