@@ -25,7 +25,9 @@ public data class HierarchyInfo(
 
 /**
  * `IN_HIERARCHY`: [expr] equals one of [raws] or the id of one of their descendants. The anchor is the
- * plain `IN` predicate on the tree's id, so values are coerced and compared exactly as `IN` does.
+ * plain `IN` predicate on the tree's id, so values are coerced and compared exactly as `IN` does — except
+ * for [FilterOptions.normalizedStringFields]: it vouches for the field's column, not the tree's id column.
+ * The field and its tree are checked before empty [raws] are turned into a predicate that matches nothing.
  */
 context(mappersModule: ColumnMappersModule?, options: FilterOptions)
 internal fun hierarchyPredicate(
@@ -42,19 +44,24 @@ internal fun hierarchyPredicate(
             "${hierarchy.parentColumn.table.tableName}.${hierarchy.parentColumn.name} is not on the tree's table " +
             hierarchy.idColumn.table.tableName
     }
-    val anchor = inListValue(hierarchy.idColumn, raws, fieldName)
+    if (raws.isEmpty()) return Op.FALSE
+    val anchor = context(options.copy(normalizedStringFields = emptySet())) {
+        inListValue(hierarchy.idColumn, raws, fieldName)
+    }
     return HierarchyInOp(expr, hierarchy, anchor)
 }
 
 /**
  * The tree [column] points into: [FilterOptions.hierarchyResolver]'s answer when it has one; otherwise
- * the column it references (or the column itself when it references nothing) is the tree's id, and the
- * tree's parent link is the single column of that table referencing it back.
+ * the column it references — through Exposed's `referee`, then [FilterOptions.referenceResolver] — or the
+ * column itself when it references nothing is the tree's id, and the tree's parent link is the single
+ * column of that table physically referencing it back.
  */
 context(options: FilterOptions)
 internal fun resolveHierarchy(column: Column<*>, fieldName: String): HierarchyInfo {
     options.hierarchyResolver?.invoke(column)?.let { return it }
-    val idColumn = resolveReference(column)?.referencedIdColumn ?: column
+    val reference = resolveReference(column) ?: options.referenceResolver?.invoke(column)
+    val idColumn = reference?.referencedIdColumn ?: column
     val tree = idColumn.table
     val parents = tree.columns.filter { resolveReference(it)?.referencedIdColumn == idColumn }
     return when (parents.size) {
@@ -73,7 +80,8 @@ internal fun resolveHierarchy(column: Column<*>, fieldName: String): HierarchyIn
 /**
  * Renders `expr IN (WITH RECURSIVE ef_tree(id) AS (<anchor nodes> UNION <their children>) SELECT ef_tree.id
  * FROM ef_tree)`. Exposed has no CTE support, but every part is still an Exposed query, so identifiers are
- * quoted per dialect and the anchor's values are bound. `UNION` deduplicates, which also stops on cycles.
+ * quoted per dialect and the anchor's values are bound. `UNION` deduplicates; on PostgreSQL that also stops
+ * on cyclic data, but H2 2.4 does not stop a recursive `UNION` on cycles and runs until the query times out.
  */
 private class HierarchyInOp(
     private val expr: Column<*>,

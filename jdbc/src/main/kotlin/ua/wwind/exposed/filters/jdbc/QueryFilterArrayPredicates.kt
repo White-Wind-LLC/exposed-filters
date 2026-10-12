@@ -33,6 +33,12 @@ internal fun arrayPredicateFor(
     filter: FieldFilter,
     fieldName: String
 ): Op<Boolean> {
+    if (filter.operator == FilterOperator.IN_HIERARCHY) {
+        error(
+            "IN_HIERARCHY is not supported for array field '$fieldName': it requires a table column " +
+                "holding a tree node id"
+        )
+    }
     val arrayColumnType = expr.columnType as ArrayColumnType<*, *>
     val delegate = arrayColumnType.delegate
 

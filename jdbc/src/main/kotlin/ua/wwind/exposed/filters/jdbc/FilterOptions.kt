@@ -36,7 +36,8 @@ public data class NestedFieldProjection(
  * and compare the column raw (`column = ?` instead of `LOWER(column) = ?`), so a plain B-tree index
  * on the column can serve the query. Behavior is unchanged from the caller's perspective. Ignored
  * when [caseSensitiveStrings] is `true`. Matching is by exact field name as written in the filter;
- * JSON/JSONB string paths are not affected and keep the `LOWER()` form.
+ * JSON/JSONB string paths are not affected and keep the `LOWER()` form, and neither is the tree's id
+ * column an `IN_HIERARCHY` field's values are compared with.
  * @property referenceResolver Resolves a nested field path (`someId.name`) for a column that carries
  * no physical foreign key. It is consulted only after Exposed's own `referee` lookup comes back
  * empty, so a declared reference always wins and the resolver never changes existing behavior.
@@ -44,6 +45,7 @@ public data class NestedFieldProjection(
  * to leave the column unresolvable and keep the failure. Useful when a module boundary forbids the
  * physical FK but the logical one is recorded elsewhere (an annotation, a registry). For a column of
  * a table alias or a subquery it receives the original table column behind the clone, never the clone.
+ * `IN_HIERARCHY` auto-detection consults it the same way to find the tree a column points into.
  * @property nestedFieldResolver Replaces what a nested field path reads, given the resolved target
  * table and the nested field name. Unlike [referenceResolver] it is consulted for every nested path,
  * including one Exposed resolves itself, because the reference is not what needs replacing — the

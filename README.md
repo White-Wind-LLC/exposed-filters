@@ -520,7 +520,8 @@ What the field means depends on the column:
 | the tree's parent column (`Categories.parentId`) | strict descendants of the given nodes |
 
 The tree is found automatically when the table has exactly one column referencing its own id
-(`reference("parent_id", id)`). Otherwise — a parent link without a physical foreign key, or a table with
+(`reference("parent_id", id)`). A field that points into the tree through a logical foreign key works too, as
+long as `FilterOptions.referenceResolver` resolves it. Otherwise — a parent link without a physical foreign key, or a table with
 several self-references — declare it with `FilterOptions.hierarchyResolver`. It is consulted first and can
 override auto-detection; returning `null` falls back to it:
 
@@ -533,11 +534,12 @@ val options = FilterOptions(
 ```
 
 - Values are parsed and compared like `IN` (custom mappers, `EntityID`, case-insensitive string ids).
-  Empty `values` match nothing.
+  `normalizedStringFields` does not apply: it vouches for the field's column, while the values are compared
+  with the tree's id column, which keeps the `LOWER()` form. Empty `values` match nothing.
 - It works inside `AND`/`OR`/`NOT` groups and on reference paths (`productId.categoryId`).
 - A row whose column is `NULL` never matches — and, like `NOT_IN`, drops out under `NOT` too.
 - Not supported for JSON paths, array columns or computed expressions; a column with no detectable tree
-  fails with an error pointing at `hierarchyResolver`.
+  fails with an error pointing at `hierarchyResolver`. Both fail even when `values` is empty.
 - The SQL is standard `WITH RECURSIVE` inside a subquery: tested on PostgreSQL and H2, expected to work on
   MySQL 8+ and SQLite. Oracle and SQL Server are not supported.
 - Cyclic data (a node that is its own ancestor) terminates on PostgreSQL, whose recursive `UNION` drops
@@ -575,7 +577,7 @@ Filter by nested JSON field:
 
 ### Supported operators
 
-All standard operators work with JSON fields:
+All standard operators except `IN_HIERARCHY` work with JSON fields:
 
 - **Equality**: `EQ`, `NEQ`
 - **String search**: `CONTAINS`, `STARTS_WITH`, `ENDS_WITH`
@@ -858,6 +860,8 @@ Operator constraints:
   are rejected, because the database would compare the stored representation instead - use `IN` with explicit values.
 - `IN` requires non-empty values; `NOT_IN` with an empty `values` array is treated as a no-op (ignored).
 - `IN` and `NOT_IN` are supported for scalar and array fields.
+- `IN_HIERARCHY` only for table columns that point into a tree (not JSON paths, arrays or computed expressions);
+  empty `values` match nothing.
 - Date/time operators: `EQ`, `IN`, `BETWEEN`, `GT`, `GTE`, `LT`, `LTE`, `IS_NULL`, `IS_NOT_NULL` are supported for date
   and timestamp columns.
 
