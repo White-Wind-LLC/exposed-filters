@@ -29,7 +29,7 @@ import ua.wwind.exposed.filters.core.FilterRequest
 
 /** A category tree: a physical self-reference, so the hierarchy is auto-detected. */
 internal object HCategories : Table("h_categories") {
-    val id: Column<Int> = integer("id")
+    val id: Column<Int> = integer("id").autoIncrement()
     val name: Column<String> = varchar("name", 50)
     val parentId: Column<Int?> = reference("parent_id", id).nullable()
     override val primaryKey = PrimaryKey(id)
@@ -303,6 +303,17 @@ abstract class QueryFilterHierarchyContract {
     }
 
     // ----- Id types -----
+
+    @Test
+    fun `scalar operators work on an auto-increment id`() {
+        // `autoIncrement()` wraps the column type in `AutoIncColumnType`; values must still be coerced.
+        fun names(op: FilterOperator, vararg values: String) =
+            categoryNames(FilterRequest(FilterLeaf(listOf(FieldFilter("id", op, values.toList())))))
+        assertEquals(setOf("Computers"), names(FilterOperator.EQ, "2"))
+        assertEquals(setOf("Computers", "Phones"), names(FilterOperator.IN, "2", "5"))
+        assertEquals(setOf("Books", "Fiction"), names(FilterOperator.GT, "5"))
+        assertEquals(setOf("Laptops", "Gaming"), names(FilterOperator.BETWEEN, "3", "4"))
+    }
 
     @Test
     fun `plain IN works on an auto-increment EntityID id`() {
