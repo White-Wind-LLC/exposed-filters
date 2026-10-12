@@ -224,6 +224,32 @@ class FilterExtractionStrictTest {
     }
 
     @Test
+    fun `IN_HIERARCHY keeps every value of a flat body`() {
+        val parsed = parseFilterRequestOrNull("""{"filters":{"categoryId":[{"op":"IN_HIERARCHY","values":[1,"2"]}]}}""")
+        assertNotNull(parsed)
+        val predicate = (parsed!!.root as FilterLeaf).predicates.single()
+        assertEquals(FilterOperator.IN_HIERARCHY, predicate.operator)
+        assertEquals(listOf("1", "2"), predicate.values)
+    }
+
+    @Test
+    fun `IN_HIERARCHY keeps every value inside a tree body`() {
+        val parsed = parseFilterRequestOrNull(
+            """
+            {"combinator":"OR","children":[
+                {"filters":{"categoryId":[{"op":"IN_HIERARCHY","values":["1","2"]}]}},
+                {"filters":{"name":[{"op":"EQ","value":"x"}]}}
+            ]}
+            """.trimIndent()
+        )
+        assertNotNull(parsed)
+        val group = parsed!!.root as FilterGroup
+        val predicate = (group.children[0] as FilterLeaf).predicates.single()
+        assertEquals(FilterOperator.IN_HIERARCHY, predicate.operator)
+        assertEquals(listOf("1", "2"), predicate.values)
+    }
+
+    @Test
     fun `decimal value is read as its text`() {
         val parsed = parseFilterRequestOrNull("""{"filters":{"weight":[{"op":"LTE","value":1.5}]}}""")
 
