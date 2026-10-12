@@ -42,10 +42,9 @@ internal fun predicateFor(
     filter: FieldFilter,
     fieldName: String
 ): Op<Boolean> {
-    // Empty array handling: return FALSE for IN/IN_HIERARCHY/BETWEEN, TRUE for NOT_IN.
-    if ((filter.operator == FilterOperator.IN ||
-                filter.operator == FilterOperator.IN_HIERARCHY ||
-                filter.operator == FilterOperator.BETWEEN) &&
+    // Empty array handling: return FALSE for IN/BETWEEN, TRUE for NOT_IN. IN_HIERARCHY checks the field
+    // kind first, so empty values match nothing only where the operator is supported at all.
+    if ((filter.operator == FilterOperator.IN || filter.operator == FilterOperator.BETWEEN) &&
         filter.values.isEmpty()
     ) {
         return Op.FALSE

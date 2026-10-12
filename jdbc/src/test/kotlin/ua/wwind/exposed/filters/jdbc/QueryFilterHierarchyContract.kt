@@ -72,6 +72,21 @@ internal object HCodes : Table("h_codes") {
     override val primaryKey = PrimaryKey(code)
 }
 
+/** Items keyed into [HCodes]; their own codes are stored lowercase, so `code` may be a normalized field. */
+internal object HCodeItems : Table("h_code_items") {
+    val id: Column<Int> = integer("id")
+    val code: Column<String> = reference("code", HCodes.code)
+    override val primaryKey = PrimaryKey(id)
+}
+
+/** A logical-only foreign key into [HCategories]: only `referenceResolver` knows where `categoryId` points. */
+internal object HListings : Table("h_listings") {
+    val id: Column<Int> = integer("id")
+    val name: Column<String> = varchar("name", 50)
+    val categoryId: Column<Int?> = integer("category_id").nullable()
+    override val primaryKey = PrimaryKey(id)
+}
+
 /** A DAO-style tree with `EntityID` ids. */
 internal object ECategories : IntIdTable("h_e_categories") {
     val name: Column<String> = varchar("name", 50)
@@ -106,7 +121,7 @@ abstract class QueryFilterHierarchyContract {
      */
     protected open val stopsOnCycles: Boolean = true
 
-    private val allTables = arrayOf(HOrders, HProducts, HCategories, HNodes, HFolders, HCodes, ECategories)
+    private val allTables = arrayOf(HOrders, HProducts, HListings, HCategories, HNodes, HFolders, HCodeItems, HCodes, ECategories)
 
     @BeforeEach
     fun setUp() {
@@ -158,10 +173,23 @@ abstract class QueryFilterHierarchyContract {
                         it[HFolders.parentId] = parent
                     }
                 }
-            listOf("elec" to null, "comp" to "elec", "book" to null).forEach { (code, parent) ->
-                HCodes.insert {
-                    it[HCodes.code] = code
-                    it[HCodes.parentCode] = parent
+            // "ROOT" is stored upper case; items only point at the lowercase "leaf" below it.
+            listOf("elec" to null, "comp" to "elec", "book" to null, "ROOT" to null, "leaf" to "ROOT")
+                .forEach { (code, parent) ->
+                    HCodes.insert {
+                        it[HCodes.code] = code
+                        it[HCodes.parentCode] = parent
+                    }
+                }
+            HCodeItems.insert {
+                it[HCodeItems.id] = 1
+                it[HCodeItems.code] = "leaf"
+            }
+            listOf(Triple(20, "Laptop ad", 3), Triple(21, "Novel ad", 7)).forEach { (id, name, category) ->
+                HListings.insert {
+                    it[HListings.id] = id
+                    it[HListings.name] = name
+                    it[HListings.categoryId] = category
                 }
             }
             val root = ECategories.insertAndGetId { it[name] = "root" }
@@ -347,6 +375,16 @@ abstract class QueryFilterHierarchyContract {
     }
 
     @Test
+    fun `a normalized field does not normalize the tree's id column`() {
+        // The anchor compares the tree's codes, not the field's: "ROOT" must still match "root".
+        val options = FilterOptions(normalizedStringFields = setOf("code"))
+        val ids = transaction {
+            HCodeItems.selectAll().applyFiltersOn(HCodeItems, hier("code", "root"), options).map { it[HCodeItems.id] }
+        }
+        assertEquals(listOf(1), ids)
+    }
+
+    @Test
     fun `a value of the wrong type fails like IN`() {
         assertThrows(NumberFormatException::class.java) { productNames(hier("categoryId", "abc")) }
     }
@@ -419,6 +457,22 @@ abstract class QueryFilterHierarchyContract {
     }
 
     @Test
+    fun `auto-detection follows a logical foreign key from referenceResolver`() {
+        val logical = FilterOptions(
+            referenceResolver = { column ->
+                if (column == HListings.categoryId) ReferenceInfo(HCategories.id, HCategories) else null
+            },
+        )
+        val names = transaction {
+            HListings.selectAll()
+                .applyFiltersOn(HListings, hier("categoryId", 1), logical)
+                .map { it[HListings.name] }
+                .toSet()
+        }
+        assertEquals(setOf("Laptop ad"), names)
+    }
+
+    @Test
     fun `a parent column on another table is rejected`() {
         val wrong = FilterOptions(
             hierarchyResolver = { HierarchyInfo(HCategories.id, HProducts.categoryId) },
@@ -478,5 +532,38 @@ abstract class QueryFilterHierarchyContract {
             transaction { HTagged.selectAll().applyFiltersOn(HTagged, hier("tags", 1)) }
         }
         assertTrue(error.message!!.contains("IN_HIERARCHY is not supported for array field 'tags'"), error.message)
+        assertFalse(error.message!!.contains("Use IN or NOT_IN"), error.message)
+    }
+
+    @Test
+    fun `empty values are rejected on an array column`() {
+        val error = assertThrows(IllegalStateException::class.java) {
+            transaction { HTagged.selectAll().applyFiltersOn(HTagged, hier("tags")) }
+        }
+        assertTrue(error.message!!.contains("IN_HIERARCHY is not supported for array field 'tags'"), error.message)
+    }
+
+    @Test
+    fun `empty values are rejected on a JSON path`() {
+        val error = assertThrows(IllegalStateException::class.java) {
+            transaction { HTagged.selectAll().applyFiltersOn(HTagged, hier("payload.a")) }
+        }
+        assertTrue(error.message!!.contains("IN_HIERARCHY is not supported for JSON field"), error.message)
+    }
+
+    @Test
+    fun `empty values are rejected on a computed expression`() {
+        val error = assertThrows(IllegalArgumentException::class.java) {
+            transaction {
+                HProducts.selectAll().applyFilters(mapOf("next" to (HProducts.id + 1)), hier("next")).toList()
+            }
+        }
+        assertTrue(error.message!!.contains("IN_HIERARCHY requires a table column: 'next'"), error.message)
+    }
+
+    @Test
+    fun `empty values are rejected on a column outside any tree`() {
+        val error = assertThrows(IllegalStateException::class.java) { productNames(hier("name")) }
+        assertTrue(error.message!!.contains("IN_HIERARCHY on field 'name'"), error.message)
     }
 }
