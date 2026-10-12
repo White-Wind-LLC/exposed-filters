@@ -72,6 +72,30 @@ class FilterRequestBuilderTest {
     }
 
     @Test
+    fun `inHierarchy creates IN_HIERARCHY operator`() {
+        val result = filterRequest {
+            inHierarchy("categoryId", 1, 2)
+        }
+
+        assertNotNull(result)
+        val leaf = result!!.root as FilterLeaf
+        assertEquals(FilterOperator.IN_HIERARCHY, leaf.predicates[0].operator)
+        assertEquals(listOf("1", "2"), leaf.predicates[0].values)
+    }
+
+    @Test
+    fun `inHierarchy accepts an iterable`() {
+        val result = filterRequest {
+            inHierarchy("categoryId", listOf("a", "b"))
+        }
+
+        assertNotNull(result)
+        val leaf = result!!.root as FilterLeaf
+        assertEquals(FilterOperator.IN_HIERARCHY, leaf.predicates[0].operator)
+        assertEquals(listOf("a", "b"), leaf.predicates[0].values)
+    }
+
+    @Test
     fun `between creates BETWEEN operator`() {
         val result = filterRequest {
             between("age", 18, 65)

@@ -4,7 +4,8 @@ import kotlinx.serialization.Serializable
 
 @Serializable
 public enum class FilterOperator {
-    EQ, NEQ, CONTAINS, STARTS_WITH, ENDS_WITH, IN, NOT_IN, BETWEEN, GT, GTE, LT, LTE, IS_NULL, IS_NOT_NULL
+    EQ, NEQ, CONTAINS, STARTS_WITH, ENDS_WITH, IN, NOT_IN, BETWEEN, GT, GTE, LT, LTE, IS_NULL, IS_NOT_NULL,
+    IN_HIERARCHY,
 }
 
 @Serializable

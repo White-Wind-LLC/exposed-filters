@@ -275,6 +275,18 @@ public class FilterRequestBuilder internal constructor(
     }
 
     /**
+     * IN_HIERARCHY matches the given tree node ids and every descendant of them. The tree is resolved by
+     * the adapter (in `jdbc`: `FilterOptions.hierarchyResolver`, or a single self-reference).
+     */
+    public fun inHierarchy(field: String, values: Iterable<Any>) {
+        add(field, FilterOperator.IN_HIERARCHY, values.map { toStringValue(it) })
+    }
+
+    public fun inHierarchy(field: String, vararg values: Any) {
+        inHierarchy(field, values.asList())
+    }
+
+    /**
      * BETWEEN expects two values: lower and upper bounds.
      */
     public fun between(field: String, from: Any?, to: Any?) {

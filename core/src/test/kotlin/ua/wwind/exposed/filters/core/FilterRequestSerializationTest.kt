@@ -63,6 +63,20 @@ class FilterRequestSerializationTest {
     }
 
     @Test
+    fun `inHierarchy operator serializes with values array`() {
+        val request = filterRequest {
+            inHierarchy("categoryId", 1, 2, 3)
+        }
+
+        assertNotNull(request)
+        val dto = json.decodeFromString<FilterBodyDto>(request!!.toJsonString())
+        val condition = dto.filters!!["categoryId"]!!.single()
+        assertEquals(FilterOperator.IN_HIERARCHY, condition.op)
+        assertNull(condition.value)
+        assertEquals(listOf("1", "2", "3"), condition.values)
+    }
+
+    @Test
     fun `between operator serializes with values array`() {
         val request = filterRequest {
             "age" between 18..65

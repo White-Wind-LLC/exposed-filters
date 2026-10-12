@@ -69,6 +69,7 @@ internal fun predicateFor(
         FilterOperator.LTE -> compareLessEq(expr, filter.values.firstOrNull(), fieldName)
         FilterOperator.IS_NULL -> expr.isNull()
         FilterOperator.IS_NOT_NULL -> expr.isNotNull()
+        FilterOperator.IN_HIERARCHY -> error("IN_HIERARCHY is not implemented yet: '$fieldName'")
     }
 }
 
