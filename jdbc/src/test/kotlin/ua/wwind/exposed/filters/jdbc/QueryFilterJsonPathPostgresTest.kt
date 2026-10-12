@@ -5,6 +5,7 @@ import kotlinx.datetime.LocalDateTime
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 import org.jetbrains.exposed.v1.core.Column
+import org.jetbrains.exposed.v1.core.JoinType
 import org.jetbrains.exposed.v1.core.QueryBuilder
 import org.jetbrains.exposed.v1.core.Table
 import org.jetbrains.exposed.v1.jdbc.Database
@@ -523,5 +524,28 @@ class QueryFilterJsonPathPostgresTest {
             val count = query.count()
             assertEquals(1, count)
         }
+    }
+
+    @Test
+    fun `json path below a dotted key of an explicit map`() {
+        val join = PgJsonPathUsersTable.join(
+            PgJsonPathWarehousesTable,
+            JoinType.INNER,
+            PgJsonPathUsersTable.warehouseId,
+            PgJsonPathWarehousesTable.id,
+        )
+        val columns = mapOf(
+            "user.payload" to PgJsonPathUsersTable.payload,
+            "warehouse.name" to PgJsonPathWarehousesTable.name,
+        )
+        val filter =
+            filterRequest {
+                "user.payload.profile.meta.tier" eq "gold"
+                "warehouse.name" eq "Central"
+            }
+
+        val count = transaction { join.selectAll().applyFilters(columns, filter).count() }
+
+        assertEquals(1, count)
     }
 }

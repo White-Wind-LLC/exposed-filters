@@ -148,10 +148,11 @@ internal fun ColumnSet.toColumnMap(): Map<String, ExpressionWithColumnType<*>> =
  */
 internal fun ColumnSet.requireUnambiguousFields(root: FilterNode) {
     if (this is Table) return
-    val ambiguous = sourceFields().groupBy { it.name }.filterValues { it.size > 1 }
+    val byName = sourceFields().groupBy { it.name }
+    val ambiguous = byName.filterValues { it.size > 1 }
     if (ambiguous.isEmpty()) return
     for (field in root.referencedFields()) {
-        val baseName = field.substringBefore('.')
+        val baseName = splitField(field) { it in byName }.baseName
         val candidates = ambiguous[baseName] ?: continue
         throw IllegalArgumentException(
             "Ambiguous filter field: '$baseName' is exposed by " +
