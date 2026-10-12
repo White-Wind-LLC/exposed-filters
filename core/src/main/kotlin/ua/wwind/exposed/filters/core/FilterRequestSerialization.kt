@@ -143,6 +143,7 @@ private fun FieldFilter.toConditionDto(): ConditionDto {
     return when (operator) {
         FilterOperator.IN,
         FilterOperator.NOT_IN,
+        FilterOperator.IN_HIERARCHY,
         FilterOperator.BETWEEN -> {
             ConditionDto(
                 op = operator,

@@ -91,6 +91,21 @@ class FilterSerializationRoundTripTest {
     }
 
     @Test
+    fun `inHierarchy operator round-trips correctly`() {
+        val original = filterRequest {
+            inHierarchy("categoryId", 1, 2, 3)
+        }
+
+        assertNotNull(original)
+        val parsed = parseFilterRequestOrNull(original!!.toJsonString())
+
+        assertNotNull(parsed)
+        val leaf = parsed!!.root as FilterLeaf
+        assertEquals(FilterOperator.IN_HIERARCHY, leaf.predicates[0].operator)
+        assertEquals(listOf("1", "2", "3"), leaf.predicates[0].values)
+    }
+
+    @Test
     fun `between operator round-trips correctly`() {
         val original = filterRequest {
             "age" between 18..65

@@ -1,6 +1,7 @@
 package ua.wwind.exposed.filters.jdbc
 
 import org.jetbrains.exposed.v1.core.ArrayColumnType
+import org.jetbrains.exposed.v1.core.AutoIncColumnType
 import org.jetbrains.exposed.v1.core.BooleanColumnType
 import org.jetbrains.exposed.v1.core.Column
 import org.jetbrains.exposed.v1.core.CustomEnumerationColumnType
@@ -9,6 +10,7 @@ import org.jetbrains.exposed.v1.core.EntityIDColumnType
 import org.jetbrains.exposed.v1.core.EnumerationColumnType
 import org.jetbrains.exposed.v1.core.EnumerationNameColumnType
 import org.jetbrains.exposed.v1.core.ExpressionWithColumnType
+import org.jetbrains.exposed.v1.core.IColumnType
 import org.jetbrains.exposed.v1.core.IntegerColumnType
 import org.jetbrains.exposed.v1.core.LongColumnType
 import org.jetbrains.exposed.v1.core.Op
@@ -40,8 +42,9 @@ internal fun predicateFor(
     filter: FieldFilter,
     fieldName: String
 ): Op<Boolean> {
-    // Empty array handling: return FALSE for IN/BETWEEN, TRUE for NOT_IN.
+    // Empty array handling: return FALSE for IN/IN_HIERARCHY/BETWEEN, TRUE for NOT_IN.
     if ((filter.operator == FilterOperator.IN ||
+                filter.operator == FilterOperator.IN_HIERARCHY ||
                 filter.operator == FilterOperator.BETWEEN) &&
         filter.values.isEmpty()
     ) {
@@ -69,6 +72,7 @@ internal fun predicateFor(
         FilterOperator.LTE -> compareLessEq(expr, filter.values.firstOrNull(), fieldName)
         FilterOperator.IS_NULL -> expr.isNull()
         FilterOperator.IS_NOT_NULL -> expr.isNotNull()
+        FilterOperator.IN_HIERARCHY -> hierarchyPredicate(expr, filter.values, fieldName)
     }
 }
 
@@ -80,7 +84,7 @@ internal fun likeString(
     expr: ExpressionWithColumnType<*>,
     pattern: String,
     fieldName: String
-): Op<Boolean> = when (expr.columnType) {
+): Op<Boolean> = when (expr.columnType.withoutAutoInc()) {
     is VarCharColumnType, is TextColumnType -> {
         @Suppress("UNCHECKED_CAST")
         val stringExpr = expr as ExpressionWithColumnType<String>
@@ -133,7 +137,7 @@ internal fun eqValue(
     }
 
     // Built-in type mappers.
-    return when (expr.columnType) {
+    return when (expr.columnType.withoutAutoInc()) {
         is IntegerColumnType -> (expr as ExpressionWithColumnType<Int>).eq(raw.toInt())
         is LongColumnType -> (expr as ExpressionWithColumnType<Long>).eq(raw.toLong())
         is ShortColumnType -> (expr as ExpressionWithColumnType<Short>).eq(raw.toShort())
@@ -200,7 +204,7 @@ internal fun inListValue(
         return (expr as ExpressionWithColumnType<Any>).inList(values)
     }
 
-    return when (expr.columnType) {
+    return when (expr.columnType.withoutAutoInc()) {
         is IntegerColumnType -> (expr as ExpressionWithColumnType<Int>).inList(raws.map(String::toInt))
         is LongColumnType -> (expr as ExpressionWithColumnType<Long>).inList(raws.map(String::toLong))
         is ShortColumnType -> (expr as ExpressionWithColumnType<Short>).inList(raws.map(String::toShort))
@@ -275,7 +279,7 @@ internal fun betweenValues(
         )
     }
 
-    return when (expr.columnType) {
+    return when (expr.columnType.withoutAutoInc()) {
         is IntegerColumnType -> (expr as ExpressionWithColumnType<Int>).between(from.toInt(), to.toInt())
         is LongColumnType -> (expr as ExpressionWithColumnType<Long>).between(from.toLong(), to.toLong())
         is ShortColumnType -> (expr as ExpressionWithColumnType<Short>).between(from.toShort(), to.toShort())
@@ -305,3 +309,9 @@ internal fun betweenValues(
         else -> error("Unsupported BETWEEN for field '$fieldName'")
     }
 }
+
+/**
+ * The value type behind an `autoIncrement()` column: Exposed wraps it in [AutoIncColumnType], which is
+ * not an `IntegerColumnType`/`LongColumnType` itself, so type dispatch must look through it.
+ */
+internal fun IColumnType<*>.withoutAutoInc(): IColumnType<*> = (this as? AutoIncColumnType<*>)?.delegate ?: this

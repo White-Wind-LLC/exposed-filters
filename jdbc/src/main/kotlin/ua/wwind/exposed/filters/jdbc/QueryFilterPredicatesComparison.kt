@@ -55,7 +55,7 @@ internal fun compareGreater(
         return (expr as ExpressionWithColumnType<Comparable<Any>>).greater(value as Comparable<Any>)
     }
 
-    return when (expr.columnType) {
+    return when (expr.columnType.withoutAutoInc()) {
         is IntegerColumnType -> (expr as ExpressionWithColumnType<Int>).greater(raw.toInt())
         is LongColumnType -> (expr as ExpressionWithColumnType<Long>).greater(raw.toLong())
         is ShortColumnType -> (expr as ExpressionWithColumnType<Short>).greater(raw.toShort())
@@ -118,7 +118,7 @@ internal fun compareGreaterEq(
         return (expr as ExpressionWithColumnType<Comparable<Any>>).greaterEq(value as Comparable<Any>)
     }
 
-    return when (expr.columnType) {
+    return when (expr.columnType.withoutAutoInc()) {
         is IntegerColumnType -> (expr as ExpressionWithColumnType<Int>).greaterEq(raw.toInt())
         is LongColumnType -> (expr as ExpressionWithColumnType<Long>).greaterEq(raw.toLong())
         is ShortColumnType -> (expr as ExpressionWithColumnType<Short>).greaterEq(raw.toShort())
@@ -181,7 +181,7 @@ internal fun compareLess(
         return (expr as ExpressionWithColumnType<Comparable<Any>>).less(value as Comparable<Any>)
     }
 
-    return when (expr.columnType) {
+    return when (expr.columnType.withoutAutoInc()) {
         is IntegerColumnType -> (expr as ExpressionWithColumnType<Int>).less(raw.toInt())
         is LongColumnType -> (expr as ExpressionWithColumnType<Long>).less(raw.toLong())
         is ShortColumnType -> (expr as ExpressionWithColumnType<Short>).less(raw.toShort())
@@ -244,7 +244,7 @@ internal fun compareLessEq(
         return (expr as ExpressionWithColumnType<Comparable<Any>>).lessEq(value as Comparable<Any>)
     }
 
-    return when (expr.columnType) {
+    return when (expr.columnType.withoutAutoInc()) {
         is IntegerColumnType -> (expr as ExpressionWithColumnType<Int>).lessEq(raw.toInt())
         is LongColumnType -> (expr as ExpressionWithColumnType<Long>).lessEq(raw.toLong())
         is ShortColumnType -> (expr as ExpressionWithColumnType<Short>).lessEq(raw.toShort())

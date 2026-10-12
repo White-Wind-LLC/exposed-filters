@@ -91,5 +91,6 @@ internal fun rawColumnTypeOf(column: Column<*>, fieldName: String): IColumnType<
     if (idColumn == null) {
         error("Cannot access idColumn for EntityID field '$fieldName'")
     }
-    return idColumn.columnType
+    // `IntIdTable.id` and the like are auto-increment: the raw type sits behind `AutoIncColumnType`.
+    return idColumn.columnType.withoutAutoInc()
 }

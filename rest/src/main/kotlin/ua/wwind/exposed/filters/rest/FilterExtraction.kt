@@ -161,7 +161,8 @@ private fun buildLeafOrNull(filters: Map<String, List<ConditionDto>>?): FilterLe
             val values: List<String> = when (condition.op) {
                 FilterOperator.IN,
                 FilterOperator.BETWEEN,
-                FilterOperator.NOT_IN -> {
+                FilterOperator.NOT_IN,
+                FilterOperator.IN_HIERARCHY -> {
                     condition.values ?: emptyList()
                 }
 

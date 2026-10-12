@@ -83,6 +83,7 @@ internal fun jsonPathPredicateFor(
         FilterOperator.IN -> jsonInTyped(extracted, filter.values, fieldName)
         FilterOperator.NOT_IN -> not(jsonInTyped(extracted, filter.values, fieldName))
         FilterOperator.BETWEEN -> jsonBetweenTyped(extracted, filter.values, fieldName)
+        FilterOperator.IN_HIERARCHY -> error("IN_HIERARCHY is not supported for JSON field '$fieldName'")
         FilterOperator.GT -> jsonCompareTyped(
             extracted,
             requireNotNull(filter.values.firstOrNull()) { "GT requires a value" },
