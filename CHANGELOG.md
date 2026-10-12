@@ -4,6 +4,8 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.14.0] - 2026-10-12
+
 - New `IN_HIERARCHY` operator: matches tree nodes and all their descendants through a recursive CTE;
   trees are auto-detected from a single self-reference or declared with the new
   `FilterOptions.hierarchyResolver` ([#22](https://github.com/White-Wind-LLC/exposed-filters/issues/22)).
@@ -16,6 +18,8 @@ All notable changes to this project will be documented in this file.
   the field `a.b` to the key `a.b` instead of a path below `a`.
 - JDBC: filters on an `autoIncrement()` column (`integer("id").autoIncrement()`, `IntIdTable.id`) no longer fail
   with "Unsupported equality/IN …"; the value type behind Exposed's `AutoIncColumnType` is now recognized.
+
+**Full Changelog**: https://github.com/White-Wind-LLC/exposed-filters/compare/v1.13.0...v1.14.0
 
 ## [1.13.0] - 2026-09-24
 
