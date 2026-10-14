@@ -64,6 +64,14 @@ public data class NestedFieldProjection(
  * auto-detection. Needed for a parent link with no physical foreign key and for a table with several
  * self-references. For a column of a table alias or a subquery it receives the original table column
  * behind the clone, never the clone.
+ * @property jsonPathType Declares the type a JSON/JSONB path field (`attributes.size`) is compared as,
+ * given the field name as written in the filter. Return `null` to keep the type inferred from each
+ * filter value, which is the default. With a declared type the filter value no longer decides the
+ * cast: [JsonValueType.STRING] compares text with no cast, so `"12"` or `"true"` match only that text,
+ * `CONTAINS`/`STARTS_WITH`/`ENDS_WITH` accept any value and `GT`/`GTE`/`LT`/`LTE`/`BETWEEN` compare
+ * text; the other types parse every value before any SQL is built and throw [IllegalArgumentException]
+ * naming the field when one does not parse. Stored text that does not fit a declared non-string type
+ * still fails the cast in the database.
  */
 public data class FilterOptions(
     public val caseSensitiveStrings: Boolean = false,
@@ -72,6 +80,7 @@ public data class FilterOptions(
     public val nestedFieldResolver: ((Table, String) -> NestedFieldProjection?)? = null,
     public val aggregateFields: Set<String> = emptySet(),
     public val hierarchyResolver: ((Column<*>) -> HierarchyInfo?)? = null,
+    public val jsonPathType: ((field: String) -> JsonValueType?)? = null,
 )
 
 internal fun FilterOptions.usesNormalizedComparison(fieldName: String): Boolean =

@@ -598,6 +598,39 @@ The library automatically infers the JSON value type based on the raw string:
 - **Timestamps**: `YYYY-MM-DDTHH:MM` or `YYYY-MM-DDTHH:MM:SS` → SQL `TIMESTAMP`
 - **Strings**: any other value
 
+### Declaring JSON value types
+
+Inference looks only at the filter value, so it can pick a cast the stored data does not fit: `EQ "12"` on a key
+holding `"12"` and `"12A"` renders `CAST(... AS DOUBLE PRECISION) = 12.0` and the database fails on `"12A"`.
+When the application knows a key's type, declare it with `FilterOptions.jsonPathType`. It receives the field name as
+written in the filter and returns a `JsonValueType` (`STRING`, `NUMBER`, `BOOLEAN`, `DATE`, `DATETIME`), or `null`
+to keep inference:
+
+```kotlin
+val options = FilterOptions(
+    jsonPathType = { field ->
+        when (field) {
+            "attributes.size", "attributes.code" -> JsonValueType.STRING
+            "attributes.weight" -> JsonValueType.NUMBER
+            else -> null
+        }
+    },
+)
+
+Items
+    .selectAll()
+    .applyFiltersOn(Items, filter, options)
+```
+
+- `STRING` compares text with no cast, whatever the value looks like: `EQ "12"` matches `"12"` only, not `"0012"`
+  or `"12A"`; `CONTAINS "12"` is accepted; `GT`/`GTE`/`LT`/`LTE`/`BETWEEN` compare text. Case handling follows
+  `caseSensitiveStrings`.
+- `NUMBER`, `BOOLEAN`, `DATE`, `DATETIME` parse every filter value before any SQL is built; a value that does not parse
+  (`"abc"` for `NUMBER`) throws `IllegalArgumentException` naming the field, so a server can answer 400. `IN`/`NOT_IN`
+  values all use the declared type. `DATETIME` also accepts a plain date as its start of day.
+- Stored text that does not fit a declared non-string type still fails the cast in the database; keeping the data
+  consistent with the declared type is the application's job.
+
 Example with multiple operators:
 
 ```json
@@ -634,7 +667,7 @@ Example with multiple operators:
 Constraints:
 
 - JSON path filtering only works on columns marked with `JsonColumnMarker` (JSON/JSONB columns in Exposed)
-- `CONTAINS`, `STARTS_WITH`, `ENDS_WITH` only work with string JSON values
+- `CONTAINS`, `STARTS_WITH`, `ENDS_WITH` only work with string JSON values (inferred, or declared `STRING`)
 - `BETWEEN` is not supported for boolean JSON values
 - Comparison operators (`GT`, `GTE`, `LT`, `LTE`) are not supported for boolean JSON values
 

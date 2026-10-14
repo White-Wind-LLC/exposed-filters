@@ -51,8 +51,8 @@ internal fun jsonPathPredicateFor(
         FilterOperator.STARTS_WITH,
         FilterOperator.ENDS_WITH -> {
             val raw = requireNotNull(filter.values.firstOrNull()) { "${filter.operator} requires a value" }
-            val inferred = inferJsonTypedValue(raw)
-            require(inferred.type == JsonInferredType.STRING) {
+            val inferred = jsonTypedValue(raw, fieldName)
+            require(inferred.type == JsonValueType.STRING) {
                 "${filter.operator} is only supported for string JSON values: '$fieldName'"
             }
             context(options.copy(normalizedStringFields = emptySet())) {
@@ -118,29 +118,29 @@ private fun jsonEqTyped(
     raw: String,
     fieldName: String
 ): Op<Boolean> {
-    val typed = inferJsonTypedValue(raw)
+    val typed = jsonTypedValue(raw, fieldName)
     return when (typed.type) {
-        JsonInferredType.NUMBER -> {
+        JsonValueType.NUMBER -> {
             val expr = extracted.castTo(DoubleColumnType())
             expr.eq(typed.value as Double)
         }
 
-        JsonInferredType.BOOLEAN -> {
+        JsonValueType.BOOLEAN -> {
             val expr = extracted.castTo(BooleanColumnType())
             expr.eq(typed.value as Boolean)
         }
 
-        JsonInferredType.DATE -> {
+        JsonValueType.DATE -> {
             val expr = extracted.castTo(SqlDateCastColumnType)
             expr.eq(typed.value as SqlDate)
         }
 
-        JsonInferredType.DATETIME -> {
+        JsonValueType.DATETIME -> {
             val expr = extracted.castTo(SqlTimestampCastColumnType)
             expr.eq(typed.value as SqlTimestamp)
         }
 
-        JsonInferredType.STRING -> {
+        JsonValueType.STRING -> {
             val value = typed.value as String
             if (options.caseSensitiveStrings) extracted.eq(value)
             else extracted.lowerCase().eq(value.lowercase())
@@ -155,34 +155,34 @@ private fun jsonInTyped(
     fieldName: String
 ): Op<Boolean> {
     if (raws.isEmpty()) return Op.FALSE
-    val typedValues = inferJsonTypedValues(raws, fieldName, "IN")
+    val typedValues = jsonTypedValues(raws, fieldName, "IN")
     val family = typedValues.first().type
     return when (family) {
-        JsonInferredType.NUMBER -> {
+        JsonValueType.NUMBER -> {
             val expr = extracted.castTo(DoubleColumnType())
             val values = typedValues.map { it.value as Double }
             expr.inList(values)
         }
 
-        JsonInferredType.BOOLEAN -> {
+        JsonValueType.BOOLEAN -> {
             val expr = extracted.castTo(BooleanColumnType())
             val values = typedValues.map { it.value as Boolean }
             expr.inList(values)
         }
 
-        JsonInferredType.DATE -> {
+        JsonValueType.DATE -> {
             val expr = extracted.castTo(SqlDateCastColumnType)
             val values = typedValues.map { it.value as SqlDate }
             expr.inList(values)
         }
 
-        JsonInferredType.DATETIME -> {
+        JsonValueType.DATETIME -> {
             val expr = extracted.castTo(SqlTimestampCastColumnType)
             val values = typedValues.map { it.value as SqlTimestamp }
             expr.inList(values)
         }
 
-        JsonInferredType.STRING -> {
+        JsonValueType.STRING -> {
             val values = typedValues.map { it.value as String }
             if (options.caseSensitiveStrings) extracted.inList(values)
             else extracted.lowerCase().inList(values.map(String::lowercase))
@@ -197,33 +197,33 @@ private fun jsonBetweenTyped(
     fieldName: String
 ): Op<Boolean> {
     require(raws.size == 2) { "BETWEEN requires exactly two values" }
-    val typedValues = inferJsonTypedValues(raws, fieldName, "BETWEEN")
+    val typedValues = jsonTypedValues(raws, fieldName, "BETWEEN")
     val left = typedValues[0]
     val right = typedValues[1]
 
     return when (left.type) {
-        JsonInferredType.NUMBER -> {
+        JsonValueType.NUMBER -> {
             val expr = extracted.castTo(DoubleColumnType())
             expr.between(left.value as Double, right.value as Double)
         }
 
-        JsonInferredType.DATE -> {
+        JsonValueType.DATE -> {
             val expr = extracted.castTo(SqlDateCastColumnType)
             expr.between(left.value as SqlDate, right.value as SqlDate)
         }
 
-        JsonInferredType.DATETIME -> {
+        JsonValueType.DATETIME -> {
             val expr = extracted.castTo(SqlTimestampCastColumnType)
             expr.between(left.value as SqlTimestamp, right.value as SqlTimestamp)
         }
 
-        JsonInferredType.STRING -> {
+        JsonValueType.STRING -> {
             val leftValue = left.value as String
             val rightValue = right.value as String
             if (options.caseSensitiveStrings) extracted.between(leftValue, rightValue)
             else extracted.lowerCase().between(leftValue.lowercase(), rightValue.lowercase())
         }
-        JsonInferredType.BOOLEAN -> error("BETWEEN is not supported for boolean JSON values: '$fieldName'")
+        JsonValueType.BOOLEAN -> error("BETWEEN is not supported for boolean JSON values: '$fieldName'")
     }
 }
 
@@ -234,27 +234,27 @@ private fun jsonCompareTyped(
     fieldName: String,
     comparator: (ExpressionWithColumnType<Comparable<Any>>, Comparable<Any>) -> Op<Boolean>
 ): Op<Boolean> {
-    val typed = inferJsonTypedValue(raw)
+    val typed = jsonTypedValue(raw, fieldName)
     return when (typed.type) {
-        JsonInferredType.NUMBER -> {
+        JsonValueType.NUMBER -> {
             val expr = extracted.castTo(DoubleColumnType())
             @Suppress("UNCHECKED_CAST")
             comparator(expr as ExpressionWithColumnType<Comparable<Any>>, typed.value as Comparable<Any>)
         }
 
-        JsonInferredType.DATE -> {
+        JsonValueType.DATE -> {
             val expr = extracted.castTo(SqlDateCastColumnType)
             @Suppress("UNCHECKED_CAST")
             comparator(expr as ExpressionWithColumnType<Comparable<Any>>, typed.value as Comparable<Any>)
         }
 
-        JsonInferredType.DATETIME -> {
+        JsonValueType.DATETIME -> {
             val expr = extracted.castTo(SqlTimestampCastColumnType)
             @Suppress("UNCHECKED_CAST")
             comparator(expr as ExpressionWithColumnType<Comparable<Any>>, typed.value as Comparable<Any>)
         }
 
-        JsonInferredType.STRING -> {
+        JsonValueType.STRING -> {
             val value = typed.value as String
             if (options.caseSensitiveStrings) {
                 @Suppress("UNCHECKED_CAST")
@@ -268,15 +268,28 @@ private fun jsonCompareTyped(
             }
         }
 
-        JsonInferredType.BOOLEAN -> error("Comparison operator is not supported for boolean JSON values: '$fieldName'")
+        JsonValueType.BOOLEAN -> error("Comparison operator is not supported for boolean JSON values: '$fieldName'")
     }
 }
 
-private fun inferJsonTypedValues(
+/**
+ * Parses a filter value as the type [FilterOptions.jsonPathType] declares for [fieldName], or infers
+ * the type from the value when nothing is declared.
+ */
+context(options: FilterOptions)
+private fun jsonTypedValue(raw: String, fieldName: String): JsonTypedValue {
+    val declared = options.jsonPathType?.invoke(fieldName) ?: return inferJsonTypedValue(raw)
+    return parseJsonTypedValue(raw, declared, fieldName)
+}
+
+context(options: FilterOptions)
+private fun jsonTypedValues(
     raws: List<String>,
     fieldName: String,
     operator: String
 ): List<JsonTypedValue> {
+    val declared = options.jsonPathType?.invoke(fieldName)
+    if (declared != null) return raws.map { parseJsonTypedValue(it, declared, fieldName) }
     val typedValues = raws.map { inferJsonTypedValue(it) }
     val firstType = typedValues.firstOrNull()?.type ?: return typedValues
     require(typedValues.all { it.type == firstType }) {
@@ -285,25 +298,37 @@ private fun inferJsonTypedValues(
     return typedValues
 }
 
+private fun parseJsonTypedValue(raw: String, type: JsonValueType, fieldName: String): JsonTypedValue {
+    val value: Any? = when (type) {
+        JsonValueType.STRING -> raw
+        JsonValueType.NUMBER -> raw.toDoubleOrNull()
+        JsonValueType.BOOLEAN -> raw.toBooleanStrictOrNull()
+        JsonValueType.DATE -> runCatching { SqlDate.valueOf(LocalDate.parse(raw)) }.getOrNull()
+        JsonValueType.DATETIME -> runCatching { SqlTimestamp.valueOf(parseLocalDateTimeFlexible(raw)) }.getOrNull()
+    }
+    requireNotNull(value) { "Value '$raw' for JSON field '$fieldName' is not a valid $type" }
+    return JsonTypedValue(type, value)
+}
+
 private fun inferJsonTypedValue(raw: String): JsonTypedValue {
     if (raw == "true" || raw == "false") {
-        return JsonTypedValue(JsonInferredType.BOOLEAN, raw.toBooleanStrict())
+        return JsonTypedValue(JsonValueType.BOOLEAN, raw.toBooleanStrict())
     }
 
     runCatching { raw.toDouble() }.getOrNull()?.let {
-        return JsonTypedValue(JsonInferredType.NUMBER, it)
+        return JsonTypedValue(JsonValueType.NUMBER, it)
     }
 
     if (raw.contains('T') || raw.contains(' ')) {
         val dt = runCatching { parseLocalDateTimeFlexible(raw) }.getOrNull()
         if (dt != null) {
-            return JsonTypedValue(JsonInferredType.DATETIME, SqlTimestamp.valueOf(dt))
+            return JsonTypedValue(JsonValueType.DATETIME, SqlTimestamp.valueOf(dt))
         }
     }
 
     runCatching { LocalDate.parse(raw) }.getOrNull()?.let {
-        return JsonTypedValue(JsonInferredType.DATE, SqlDate.valueOf(it))
+        return JsonTypedValue(JsonValueType.DATE, SqlDate.valueOf(it))
     }
 
-    return JsonTypedValue(JsonInferredType.STRING, raw)
+    return JsonTypedValue(JsonValueType.STRING, raw)
 }
