@@ -4,10 +4,14 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.14.2] - 2026-10-14
+
 - JDBC: `CONTAINS`, `STARTS_WITH` and `ENDS_WITH` match the value literally, on columns and JSON paths alike:
   `%`, `_` and `\` in it are escaped (`LIKE ? ESCAPE '\'`) instead of acting as wildcards, so `CONTAINS "%"`
   no longer matches every row ([#30](https://github.com/White-Wind-LLC/exposed-filters/issues/30)).
   **Behavior change** for callers who relied on wildcards inside the value.
+
+**Full Changelog**: https://github.com/White-Wind-LLC/exposed-filters/compare/v1.14.1...v1.14.2
 
 ## [1.14.1] - 2026-10-12
 
