@@ -25,7 +25,6 @@ import org.jetbrains.exposed.v1.core.inList
 import org.jetbrains.exposed.v1.core.isNotNull
 import org.jetbrains.exposed.v1.core.isNull
 import org.jetbrains.exposed.v1.core.java.UUIDColumnType
-import org.jetbrains.exposed.v1.core.like
 import org.jetbrains.exposed.v1.core.lowerCase
 import org.jetbrains.exposed.v1.core.not
 import ua.wwind.exposed.filters.core.FieldFilter
@@ -59,9 +58,9 @@ internal fun predicateFor(
     return when (filter.operator) {
         FilterOperator.EQ -> eqValue(expr, filter.values.firstOrNull(), fieldName)
         FilterOperator.NEQ -> not(eqValue(expr, filter.values.firstOrNull(), fieldName))
-        FilterOperator.CONTAINS -> likeString(expr, "%${filter.values.firstOrNull() ?: ""}%", fieldName)
-        FilterOperator.STARTS_WITH -> likeString(expr, "${filter.values.firstOrNull() ?: ""}%", fieldName)
-        FilterOperator.ENDS_WITH -> likeString(expr, "%${filter.values.firstOrNull() ?: ""}", fieldName)
+        FilterOperator.CONTAINS,
+        FilterOperator.STARTS_WITH,
+        FilterOperator.ENDS_WITH -> likeString(expr, filter.operator, filter.values.firstOrNull() ?: "", fieldName)
         FilterOperator.IN -> inListValue(expr, filter.values, fieldName)
         FilterOperator.NOT_IN -> not(inListValue(expr, filter.values, fieldName))
         FilterOperator.BETWEEN -> betweenValues(expr, filter.values, fieldName)
@@ -73,27 +72,6 @@ internal fun predicateFor(
         FilterOperator.IS_NOT_NULL -> expr.isNotNull()
         FilterOperator.IN_HIERARCHY -> hierarchyPredicate(expr, filter.values, fieldName)
     }
-}
-
-/**
- * LIKE predicate for string columns.
- */
-context(options: FilterOptions)
-internal fun likeString(
-    expr: ExpressionWithColumnType<*>,
-    pattern: String,
-    fieldName: String
-): Op<Boolean> = when (expr.columnType.withoutAutoInc()) {
-    is VarCharColumnType, is TextColumnType -> {
-        @Suppress("UNCHECKED_CAST")
-        val stringExpr = expr as ExpressionWithColumnType<String>
-        when {
-            options.caseSensitiveStrings -> stringExpr.like(pattern)
-            options.usesNormalizedComparison(fieldName) -> stringExpr.like(pattern.lowercase())
-            else -> stringExpr.lowerCase().like(pattern.lowercase())
-        }
-    }
-    else -> error("LIKE is only supported for string fields: '$fieldName'")
 }
 
 /**

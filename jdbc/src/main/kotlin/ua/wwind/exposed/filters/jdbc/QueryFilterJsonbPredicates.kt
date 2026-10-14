@@ -55,14 +55,8 @@ internal fun jsonPathPredicateFor(
             require(inferred.type == JsonInferredType.STRING) {
                 "${filter.operator} is only supported for string JSON values: '$fieldName'"
             }
-            val pattern = when (filter.operator) {
-                FilterOperator.CONTAINS -> "%${inferred.value as String}%"
-                FilterOperator.STARTS_WITH -> "${inferred.value as String}%"
-                FilterOperator.ENDS_WITH -> "%${inferred.value as String}"
-                else -> error("Unsupported operator")
-            }
             context(options.copy(normalizedStringFields = emptySet())) {
-                likeString(extracted, pattern, fieldName)
+                likeString(extracted, filter.operator, inferred.value as String, fieldName)
             }
         }
 
