@@ -4,6 +4,8 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.15.0] - 2026-10-15
+
 - JDBC: new `FilterOptions.jsonPathType` declares the type a JSON path field is compared as (`JsonValueType`:
   `STRING`, `NUMBER`, `BOOLEAN`, `DATE`, `DATETIME`) instead of inferring it from the filter value
   ([#31](https://github.com/White-Wind-LLC/exposed-filters/issues/31)). A declared `STRING` compares text with no
@@ -11,6 +13,8 @@ All notable changes to this project will be documented in this file.
   type rejects a value that does not parse with `IllegalArgumentException` before any SQL is built. Without the option,
   or when it returns `null`, behavior is unchanged. **Not binary-compatible** with 1.14.x: `FilterOptions` changed
   constructor arity, recompile.
+
+**Full Changelog**: https://github.com/White-Wind-LLC/exposed-filters/compare/v1.14.2...v1.15.0
 
 ## [1.14.2] - 2026-10-14
 
