@@ -6,21 +6,31 @@ import java.sql.Date as SqlDate
 import java.sql.Timestamp as SqlTimestamp
 
 /**
- * Type inference for JSON scalar values extracted via JSONPath.
+ * Type a JSON path's filter values are compared as, declared through [FilterOptions.jsonPathType].
+ * Without a declaration the type is inferred from each filter value.
  */
-internal enum class JsonInferredType {
+public enum class JsonValueType {
+    /** Plain text comparison, no cast. */
+    STRING,
+
+    /** Cast to double precision; values parse with `toDouble()`. */
     NUMBER,
+
+    /** Cast to boolean; values are `true` or `false`. */
     BOOLEAN,
+
+    /** Cast to SQL `DATE`; values are `YYYY-MM-DD`. */
     DATE,
+
+    /** Cast to SQL `TIMESTAMP`; values are ISO-8601 date-times, or a date read as its start of day. */
     DATETIME,
-    STRING
 }
 
 /**
- * Typed value with inferred JSON type.
+ * Filter value parsed as the JSON type it is compared as.
  */
 internal data class JsonTypedValue(
-    val type: JsonInferredType,
+    val type: JsonValueType,
     val value: Any
 )
 
