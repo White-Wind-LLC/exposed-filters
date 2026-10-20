@@ -4,6 +4,8 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+- Dependencies: Exposed 1.5.0 → 1.6.0.
+
 ## [1.15.0] - 2026-10-15
 
 - JDBC: new `FilterOptions.jsonPathType` declares the type a JSON path field is compared as (`JsonValueType`:
