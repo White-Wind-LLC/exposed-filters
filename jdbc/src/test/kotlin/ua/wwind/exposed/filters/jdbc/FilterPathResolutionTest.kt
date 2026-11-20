@@ -12,8 +12,16 @@ import org.jetbrains.exposed.v1.core.QueryBuilder
 import org.jetbrains.exposed.v1.core.Table
 import org.jetbrains.exposed.v1.core.Transaction
 import org.jetbrains.exposed.v1.core.alias
+import org.jetbrains.exposed.v1.core.coalesce
+import org.jetbrains.exposed.v1.core.exists
+import org.jetbrains.exposed.v1.core.stringLiteral
+import org.jetbrains.exposed.v1.core.sum
 import org.jetbrains.exposed.v1.core.upperCase
+import org.jetbrains.exposed.v1.jdbc.Database
 import org.jetbrains.exposed.v1.jdbc.select
+import org.jetbrains.exposed.v1.jdbc.selectAll
+import org.jetbrains.exposed.v1.jdbc.transactions.transaction
+import org.jetbrains.exposed.v1.jdbc.union
 import org.jetbrains.exposed.v1.json.json
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
@@ -395,7 +403,10 @@ class FilterPathResolutionTest {
         assertThrows(IllegalArgumentException::class.java) { FilterOptions(maxReferenceHops = -1) }
     }
 
-    private fun categoryProjection(source: (Table) -> ColumnSet, expression: (Table) -> ExpressionWithColumnType<*>): FilterOptions =
+    private fun categoryProjection(
+        source: (Table) -> ColumnSet,
+        expression: (Table) -> ExpressionWithColumnType<*>,
+    ): FilterOptions =
         deep.copy(
             nestedFieldResolver = { occurrence, name ->
                 if (name == "code" && occurrence is Alias<*>) {
@@ -419,7 +430,8 @@ class FilterPathResolutionTest {
             FpCategories.resolveFilterField("parentId.parentId.code", options)
         }
         assertFalse(failure is FilterPathException)
-        assertTrue(failure.message!!.contains("parentId"))
+        assertTrue(failure.message!!.contains("already in scope outside it"), failure.message)
+        assertTrue(failure.message!!.contains("parentId.parentId"), failure.message)
     }
 
     @Test
@@ -430,7 +442,8 @@ class FilterPathResolutionTest {
             FpCategories.resolveFilterField("parentId.parentId.code", options)
         }
         assertFalse(failure is FilterPathException)
-        assertTrue(failure.message!!.contains("parentId.parentId.code"))
+        assertTrue(failure.message!!.contains("does not make visible"), failure.message)
+        assertTrue(failure.message!!.contains("parentId.parentId.code"), failure.message)
     }
 
     @Test
@@ -461,5 +474,55 @@ class FilterPathResolutionTest {
 
         assertEquals(code, resolved.expression)
         assertEquals(id, resolved.hops[0].idExpression)
+    }
+
+    @Test
+    fun `the id message wins when the source also breaks the scope`() {
+        val options = categoryProjection(
+            { ColumnsOnlySource(listOf(FpCategories.name, FpCategories.code)) },
+            { aliased(it)[FpCategories.code] },
+        )
+
+        val failure = assertThrows(IllegalArgumentException::class.java) {
+            FpCategories.resolveFilterField("parentId.parentId.code", options)
+        }
+        assertTrue(failure.message!!.contains("does not expose"), failure.message)
+        assertFalse(failure.message!!.contains("in scope"), failure.message)
+    }
+
+    @Test
+    fun `an alias-only reference to a computed field reads no column`() {
+        val total = FpOrders.id.sum().alias("total")
+        val orders = FpOrders.select(total).alias("o")
+
+        assertEquals(emptySet<Column<*>>(), orders[total].referencedColumns())
+    }
+
+    @Test
+    fun `a query held by an expression contributes none of its columns`() {
+        val expression = exists(FpOrders.selectAll())
+
+        assertEquals(emptySet<Column<*>>(), expression.referencedColumns())
+    }
+
+    @Test
+    fun `a union held by an expression is never iterated`() {
+        val db = Database.connect("jdbc:h2:mem:fp_union_${System.nanoTime()};DB_CLOSE_DELAY=-1", "org.h2.Driver")
+        val union = transaction(db) { FpOrders.select(FpOrders.id).union(FpOrders.select(FpOrders.id)) }
+        // Iterating the union runs SQL, which throws here: the transaction is over.
+
+        assertEquals(emptySet<Column<*>>(), exists(union).referencedColumns())
+    }
+
+    @Test
+    fun `columns nested in a function are collected`() {
+        val expression = coalesce(FpOrders.number, FpCustomers.name)
+
+        assertEquals(setOf<Column<*>>(FpOrders.number, FpCustomers.name), expression.referencedColumns())
+    }
+
+    @Test
+    fun `an expression without columns reads none`() {
+        assertEquals(emptySet<Column<*>>(), stringLiteral("x").referencedColumns())
     }
 }
