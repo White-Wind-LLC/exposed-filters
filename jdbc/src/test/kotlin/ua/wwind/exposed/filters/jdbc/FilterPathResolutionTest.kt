@@ -4,6 +4,7 @@ import org.jetbrains.exposed.v1.core.Alias
 import org.jetbrains.exposed.v1.core.Column
 import org.jetbrains.exposed.v1.core.ColumnSet
 import org.jetbrains.exposed.v1.core.Expression
+import org.jetbrains.exposed.v1.core.ExpressionWithColumnType
 import org.jetbrains.exposed.v1.core.Join
 import org.jetbrains.exposed.v1.core.JoinType
 import org.jetbrains.exposed.v1.core.Op
@@ -392,5 +393,73 @@ class FilterPathResolutionTest {
     @Test
     fun `a negative hop limit is refused`() {
         assertThrows(IllegalArgumentException::class.java) { FilterOptions(maxReferenceHops = -1) }
+    }
+
+    private fun categoryProjection(source: (Table) -> ColumnSet, expression: (Table) -> ExpressionWithColumnType<*>): FilterOptions =
+        deep.copy(
+            nestedFieldResolver = { occurrence, name ->
+                if (name == "code" && occurrence is Alias<*>) {
+                    NestedFieldProjection(source = source(occurrence), expression = expression(occurrence))
+                } else {
+                    null
+                }
+            },
+        )
+
+    private fun aliased(table: Table): Alias<*> = table as Alias<*>
+
+    @Test
+    fun `a source that joins a table in scope again is a misconfiguration`() {
+        val options = categoryProjection(
+            { occurrence -> aliased(occurrence).join(FpCategories, JoinType.CROSS) },
+            { occurrence -> aliased(occurrence)[FpCategories.code] },
+        )
+
+        val failure = assertThrows(IllegalArgumentException::class.java) {
+            FpCategories.resolveFilterField("parentId.parentId.code", options)
+        }
+        assertFalse(failure is FilterPathException)
+        assertTrue(failure.message!!.contains("parentId"))
+    }
+
+    @Test
+    fun `an expression over the plain table while the source reads its alias is a misconfiguration`() {
+        val options = categoryProjection({ it }, { FpCategories.code })
+
+        val failure = assertThrows(IllegalArgumentException::class.java) {
+            FpCategories.resolveFilterField("parentId.parentId.code", options)
+        }
+        assertFalse(failure is FilterPathException)
+        assertTrue(failure.message!!.contains("parentId.parentId.code"))
+    }
+
+    @Test
+    fun `an expression over the occurrence is accepted`() {
+        val options = categoryProjection({ it }, { aliased(it)[FpCategories.code] })
+
+        val resolved = FpCategories.resolveFilterField("parentId.parentId.code", options)
+
+        assertEquals(aliased(resolved.hops[1].occurrence)[FpCategories.code], resolved.expression)
+    }
+
+    @Test
+    fun `a subquery alias projection over the plain table is accepted`() {
+        val cq = FpCategories.select(FpCategories.id, FpCategories.code).alias("cq")
+        val code = cq[FpCategories.code]
+        val id = cq[FpCategories.id]
+        val options = deep.copy(
+            nestedFieldResolver = { _, name ->
+                if (name == "code") {
+                    NestedFieldProjection(source = cq, expression = code, idExpression = id)
+                } else {
+                    null
+                }
+            },
+        )
+
+        val resolved = FpCategories.resolveFilterField("parentId.code", options)
+
+        assertEquals(code, resolved.expression)
+        assertEquals(id, resolved.hops[0].idExpression)
     }
 }

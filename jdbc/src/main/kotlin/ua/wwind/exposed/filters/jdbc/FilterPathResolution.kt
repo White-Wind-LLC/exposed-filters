@@ -3,13 +3,17 @@ package ua.wwind.exposed.filters.jdbc
 import org.jetbrains.exposed.v1.core.Alias
 import org.jetbrains.exposed.v1.core.Column
 import org.jetbrains.exposed.v1.core.ColumnSet
+import org.jetbrains.exposed.v1.core.Expression
 import org.jetbrains.exposed.v1.core.ExpressionWithColumnType
 import org.jetbrains.exposed.v1.core.Join
 import org.jetbrains.exposed.v1.core.JsonColumnMarker
 import org.jetbrains.exposed.v1.core.QueryAlias
 import org.jetbrains.exposed.v1.core.Table
 import org.jetbrains.exposed.v1.core.alias
+import org.jetbrains.exposed.v1.jdbc.Query
 import ua.wwind.exposed.filters.jdbc.FilterPathException.Reason
+import java.util.Collections
+import java.util.IdentityHashMap
 
 /**
  * A filter field resolved against the source it filters: the root it starts at, every reference it
@@ -205,6 +209,9 @@ private fun enterTarget(
                 "set NestedFieldProjection.idExpression to the expression in the source that holds it"
         }
     }
+    if (projection != null) {
+        checkProjectionScope(field, at, projection, idExpression, expression, scope)
+    }
     return ResolvedHop(
         segment = at.raw,
         referenceColumn = from.originalColumn(),
@@ -220,6 +227,59 @@ private fun enterTarget(
         expression = expression,
         tables = (listOf(target) + projection?.source?.readTables().orEmpty()).distinct(),
     )
+}
+
+/**
+ * Refuses a projection that would bind a reference to the wrong scope: a source that makes visible a
+ * name already in [outside], or an expression reading a column of a table the source does not make
+ * visible. Both render SQL that compares against another row, so the resolver is the one at fault.
+ */
+private fun checkProjectionScope(
+    field: String,
+    at: PathSegment,
+    projection: NestedFieldProjection,
+    idExpression: Expression<*>,
+    expression: Expression<*>,
+    outside: Set<String>,
+) {
+    val visible = projection.source.scopeNames()
+    val shadowed = visible.intersect(outside)
+    require(shadowed.isEmpty()) {
+        "Filter field '$field': the projection at segment '${at.raw}' makes ${shadowed.joinToString()} visible, " +
+            "which is already in scope outside it; join an alias of it in the source instead"
+    }
+    listOf("expression" to expression, "idExpression" to idExpression).forEach { (label, value) ->
+        val foreign = value.referencedColumns().map { it.table.scopeName() }.filterNot { it in visible }.distinct()
+        require(foreign.isEmpty()) {
+            "Filter field '$field': the $label of the projection at segment '${at.raw}' reads " +
+                "${foreign.joinToString()}, which its source does not make visible (${visible.joinToString()})"
+        }
+    }
+}
+
+/**
+ * The columns this expression reads, found by walking its [Expression], [Iterable], [Array] and [Pair]
+ * fields as [expressionKind] does. A [Column] is collected and not entered; an alias-only reference
+ * reads an already computed value and a [org.jetbrains.exposed.v1.core.Query] is a scope of its own, so
+ * neither is entered.
+ */
+internal fun Expression<*>.referencedColumns(): Set<Column<*>> =
+    LinkedHashSet<Column<*>>().also { collectColumns(this, it, Collections.newSetFromMap(IdentityHashMap())) }
+
+private fun collectColumns(value: Any?, into: MutableSet<Column<*>>, visited: MutableSet<Any>) {
+    when (value) {
+        is Column<*> -> into += value
+        is Query -> Unit
+        is Expression<*> -> if (visited.add(value) && !value.isAliasOnlyReference()) {
+            value.instanceFieldValues().forEach { collectColumns(it, into, visited) }
+        }
+        is Iterable<*> -> value.forEach { collectColumns(it, into, visited) }
+        is Array<*> -> value.forEach { collectColumns(it, into, visited) }
+        is Pair<*, *> -> {
+            collectColumns(value.first, into, visited)
+            collectColumns(value.second, into, visited)
+        }
+    }
 }
 
 private fun pathFailure(

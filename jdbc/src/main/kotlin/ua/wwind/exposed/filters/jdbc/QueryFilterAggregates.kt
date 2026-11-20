@@ -141,13 +141,13 @@ private fun Expression<*>.isAggregateFunction(): Boolean =
  * returns keeps the alias (and so the aliased expression) in a field. Walking into it would take a
  * subquery's `SUM` for one computed at this query level, so it is recognized by its declaring scope.
  */
-private fun Expression<*>.isAliasOnlyReference(): Boolean =
+internal fun Expression<*>.isAliasOnlyReference(): Boolean =
     javaClass.name.startsWith(ALIAS_ONLY_CLASS_PREFIX)
 
 private val ALIAS_ONLY_CLASS_PREFIX = IExpressionAlias::class.java.name + "\$aliasOnlyExpression"
 
 /** The values of every instance field declared along this object's class hierarchy. */
-private fun Any.instanceFieldValues(): List<Any?> =
+internal fun Any.instanceFieldValues(): List<Any?> =
     generateSequence<Class<*>>(javaClass) { it.superclass }
         .takeWhile { it != Any::class.java }
         .flatMap { it.declaredFields.asSequence() }
