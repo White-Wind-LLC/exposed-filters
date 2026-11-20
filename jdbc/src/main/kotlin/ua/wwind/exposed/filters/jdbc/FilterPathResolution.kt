@@ -1,5 +1,6 @@
 package ua.wwind.exposed.filters.jdbc
 
+import org.jetbrains.exposed.v1.core.AbstractQuery
 import org.jetbrains.exposed.v1.core.Alias
 import org.jetbrains.exposed.v1.core.Column
 import org.jetbrains.exposed.v1.core.ColumnSet
@@ -10,7 +11,6 @@ import org.jetbrains.exposed.v1.core.JsonColumnMarker
 import org.jetbrains.exposed.v1.core.QueryAlias
 import org.jetbrains.exposed.v1.core.Table
 import org.jetbrains.exposed.v1.core.alias
-import org.jetbrains.exposed.v1.jdbc.Query
 import ua.wwind.exposed.filters.jdbc.FilterPathException.Reason
 import java.util.Collections
 import java.util.IdentityHashMap
@@ -260,7 +260,7 @@ private fun checkProjectionScope(
 /**
  * The columns this expression reads, found by walking its [Expression], [Iterable], [Array] and [Pair]
  * fields as [expressionKind] does. A [Column] is collected and not entered; an alias-only reference
- * reads an already computed value and a [org.jetbrains.exposed.v1.core.Query] is a scope of its own, so
+ * reads an already computed value and an [AbstractQuery] (a query or a union, both iterable) is a scope of its own, so
  * neither is entered.
  */
 internal fun Expression<*>.referencedColumns(): Set<Column<*>> =
@@ -269,7 +269,7 @@ internal fun Expression<*>.referencedColumns(): Set<Column<*>> =
 private fun collectColumns(value: Any?, into: MutableSet<Column<*>>, visited: MutableSet<Any>) {
     when (value) {
         is Column<*> -> into += value
-        is Query -> Unit
+        is AbstractQuery<*> -> Unit
         is Expression<*> -> if (visited.add(value) && !value.isAliasOnlyReference()) {
             value.instanceFieldValues().forEach { collectColumns(it, into, visited) }
         }
