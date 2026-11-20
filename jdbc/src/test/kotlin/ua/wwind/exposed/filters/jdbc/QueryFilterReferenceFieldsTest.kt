@@ -113,12 +113,13 @@ class QueryFilterReferenceFieldsTest {
     @Test
     fun `a plain column rejects a nested property when no resolver is configured`() {
         transaction {
-            val failure = assertThrows(IllegalStateException::class.java) {
+            val failure = assertThrows(FilterPathException::class.java) {
                 RefBarcodesTable
                     .selectAll()
                     .applyFiltersOn(RefBarcodesTable, leaf("lotId.name", "Alpha"))
                     .toList()
             }
+            assertEquals(FilterPathException.Reason.NOT_A_REFERENCE, failure.reason)
             assertTrue(
                 failure.message.orEmpty().contains("is not a reference"),
                 "expected the unresolved-reference message, got: ${failure.message}",
@@ -180,12 +181,13 @@ class QueryFilterReferenceFieldsTest {
     fun `a resolver returning null leaves the unresolved-reference error in place`() {
         val options = FilterOptions(referenceResolver = { null })
         transaction {
-            val failure = assertThrows(IllegalStateException::class.java) {
+            val failure = assertThrows(FilterPathException::class.java) {
                 RefBarcodesTable
                     .selectAll()
                     .applyFiltersOn(RefBarcodesTable, leaf("lotId.name", "Alpha"), options = options)
                     .toList()
             }
+            assertEquals(FilterPathException.Reason.NOT_A_REFERENCE, failure.reason)
             assertTrue(failure.message.orEmpty().contains("is not a reference"), failure.message)
         }
     }

@@ -3,7 +3,6 @@ package ua.wwind.exposed.filters.jdbc
 import org.jetbrains.exposed.v1.core.Alias
 import org.jetbrains.exposed.v1.core.Column
 import org.jetbrains.exposed.v1.core.ExpressionWithColumnType
-import org.jetbrains.exposed.v1.core.JsonColumnMarker
 import org.jetbrains.exposed.v1.core.Op
 import org.jetbrains.exposed.v1.core.Table
 import org.jetbrains.exposed.v1.core.and
@@ -54,67 +53,27 @@ internal fun predicateForField(
     expressions: Map<String, ExpressionWithColumnType<*>>,
     filter: FieldFilter,
 ): Op<Boolean> {
-    val field = filter.field
-    // The root is looked up as written: a `[target]` on it stays an unknown field here rather than
-    // being dropped, since this builder follows no target.
-    val split = splitField(field) { it in expressions }
-    val root = split.rootSegment
-    val path = split.path
-    if (path == null) {
-        val expr = requireNotNull(expressions[field]) { "Unknown filter field: $field" }
-        return predicateFor(expr, filter, field)
+    val resolved = resolveField(expressions, filter.field)
+    val inner = if (resolved.jsonPath.isNotEmpty()) {
+        jsonPathPredicateFor(resolved.expression, resolved.jsonPath, filter)
+    } else {
+        predicateFor(resolved.expression, filter, filter.field)
     }
-
-    // Dot-path support:
-    // 1) JSON/JSONB field path: payload.a.b.c
-    // 2) Existing reference nested field: referenceField.nestedField
-    val pathSegments = path.split('.')
-    require(pathSegments.none { it.isEmpty() }) { "Invalid nested field path: $field" }
-
-    val baseExpr = checkNotNull(expressions[root]) { "Unknown filter field: $root" }
-    if (baseExpr.columnType is JsonColumnMarker) {
-        return jsonPathPredicateFor(baseExpr, pathSegments, filter)
-    }
-
-    val nestedName = pathSegments.joinToString(".")
-    require(baseExpr is Column<*>) {
-        "Nested field filters (e.g., '$field') are only supported for Column types, " +
-                "not for computed expressions."
-    }
-
-    // A subquery or alias column is a clone without `referee`: resolve the reference on the column it
-    // projects, but keep comparing against the clone, which is what the outer query can see.
-    val originalColumn = baseExpr.originalColumn()
-    val refInfo = resolveReference(originalColumn)
-        ?: options.referenceResolver?.invoke(originalColumn)
-        ?: error("Field $root is not a reference; cannot use nested property $nestedName")
-
-    val projection = options.nestedFieldResolver?.invoke(refInfo.referencedTable, nestedName)
-    val targetColumn = projection?.expression ?: run {
-        val targetColumns = refInfo.referencedTable.fieldMap()
-        checkNotNull(targetColumns[nestedName]) { "Unknown nested field: $nestedName for reference $root" }
-    }
-
-    // The id the base column is compared against must come from the subquery's own source: a
-    // projection that renames or replaces the target table has to say where the id went.
-    val idExpr: ExpressionWithColumnType<*> = projection?.idExpression ?: refInfo.referencedIdColumn.also { id ->
-        require(projection == null || id in projection.source.columns) {
-            "Nested field $field: the projection's source does not expose ${id.table.tableName}.${id.name}; " +
-                "set NestedFieldProjection.idExpression to the expression in the source that holds it"
-        }
-    }
-
-    // Build subquery: select referenced id from target table where target predicate holds.
-    val targetPredicate = predicateFor(targetColumn, filter, field)
-    val subQuery = (projection?.source ?: refInfo.referencedTable)
-        .selectAll()
-        .andWhere {
-            @Suppress("UNCHECKED_CAST")
-            ((idExpr as ExpressionWithColumnType<Any?>).eq(baseExpr as Column<Any?>)) and targetPredicate
-        }
-
-    return exists(subQuery)
+    return resolved.hops.foldRight(inner) { hop, acc -> hopPredicate(hop, acc, filter.field) }
 }
+
+/**
+ * Wraps [inner], a predicate on what [hop] reads, in the `EXISTS` subquery that correlates the hop's
+ * source with the reference the enclosing scope holds.
+ */
+context(mappersModule: ColumnMappersModule?, options: FilterOptions)
+internal fun hopPredicate(hop: ResolvedHop, inner: Op<Boolean>, field: String): Op<Boolean> =
+    exists(
+        hop.source.selectAll().andWhere {
+            @Suppress("UNCHECKED_CAST")
+            (hop.idExpression as ExpressionWithColumnType<Any?>).eq(hop.referenceExpression as Column<Any?>) and inner
+        },
+    )
 
 /**
  * Describes the table a reference column points at, so a nested field path can be turned into an

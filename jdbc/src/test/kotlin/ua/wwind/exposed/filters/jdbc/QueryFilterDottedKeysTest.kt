@@ -116,7 +116,7 @@ class QueryFilterDottedKeysTest {
 
     @Test
     fun `a field no key is a prefix of reports its first segment as unknown`() {
-        val failure = assertThrows(IllegalStateException::class.java) {
+        val failure = assertThrows(FilterPathException::class.java) {
             orderIds(leaf("missing.field", FilterOperator.EQ, "x"))
         }
         assertEquals("Unknown filter field: missing", failure.message)
