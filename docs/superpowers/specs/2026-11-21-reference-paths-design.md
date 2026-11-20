@@ -1,7 +1,7 @@
 # Reference paths of any depth — design
 
-Issues: to be filed before implementation, one per problem — reference paths of any depth; a hop through a reference
-with several targets.
+Issues: [#37](https://github.com/White-Wind-LLC/exposed-filters/issues/37) — reference paths of any depth;
+[#38](https://github.com/White-Wind-LLC/exposed-filters/issues/38) — a hop through a reference with several targets.
 
 ## Why
 
