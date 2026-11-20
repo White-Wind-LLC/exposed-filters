@@ -38,10 +38,10 @@ private fun String.isValidTarget(): Boolean = isNotEmpty() && none { it == '.' |
 
 /**
  * A filter field split into the [baseName] it is looked up by, the [rootSegment] that names it as
- * written (with a `[target]` when one follows the key) and the dot [path] below it; `null` when
- * nothing follows the root.
+ * written, the [rootTarget] that segment names after the key (`null` when it names none) and the dot
+ * [path] below it; `null` when nothing follows the root.
  */
-internal data class FieldPath(val baseName: String, val rootSegment: String, val path: String?)
+internal data class FieldPath(val baseName: String, val rootSegment: String, val rootTarget: String?, val path: String?)
 
 /**
  * Splits [field] at the longest dot-delimited prefix that names a key [isKey] accepts, so a map can
@@ -62,21 +62,24 @@ internal fun splitField(field: String, isKey: (String) -> Boolean): FieldPath {
     }
     for (end in ends.asReversed()) {
         val candidate = field.substring(0, end)
-        val baseName = (if (isKey(candidate)) candidate else candidate.withoutTarget()?.takeIf(isKey)) ?: continue
-        return FieldPath(baseName, candidate, field.pathAfter(end))
+        if (isKey(candidate)) return FieldPath(candidate, candidate, null, field.pathAfter(end))
+        val (name, target) = candidate.splitTarget() ?: continue
+        if (isKey(name)) return FieldPath(name, candidate, target, field.pathAfter(end))
     }
     val first = field.substring(0, ends.first())
-    return FieldPath(first.withoutTarget() ?: first, first, field.pathAfter(ends.first()))
+    val (name, target) = first.splitTarget() ?: (first to null)
+    return FieldPath(name, first, target, field.pathAfter(ends.first()))
 }
 
 private fun String.pathAfter(end: Int): String? = if (end == length) null else substring(end + 1)
 
-/** This prefix without the well-formed `[target]` it ends in; `null` when it ends in none. */
-private fun String.withoutTarget(): String? {
+/** This prefix split into its name and the well-formed `[target]` it ends in; `null` when it ends in none. */
+private fun String.splitTarget(): Pair<String, String>? {
     if (!endsWith(']')) return null
     val open = lastIndexOf('[')
-    if (open <= 0 || !substring(open + 1, length - 1).isValidTarget()) return null
-    return substring(0, open)
+    if (open <= 0) return null
+    val target = substring(open + 1, length - 1)
+    return if (target.isValidTarget()) substring(0, open) to target else null
 }
 
 /**

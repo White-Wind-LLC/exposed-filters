@@ -58,7 +58,7 @@ internal fun predicateForField(
     // The root is looked up as written: a `[target]` on it stays an unknown field here rather than
     // being dropped, since this builder follows no target.
     val split = splitField(field) { it in expressions }
-    val baseName = split.rootSegment
+    val root = split.rootSegment
     val path = split.path
     if (path == null) {
         val expr = requireNotNull(expressions[field]) { "Unknown filter field: $field" }
@@ -71,7 +71,7 @@ internal fun predicateForField(
     val pathSegments = path.split('.')
     require(pathSegments.none { it.isEmpty() }) { "Invalid nested field path: $field" }
 
-    val baseExpr = checkNotNull(expressions[baseName]) { "Unknown filter field: $baseName" }
+    val baseExpr = checkNotNull(expressions[root]) { "Unknown filter field: $root" }
     if (baseExpr.columnType is JsonColumnMarker) {
         return jsonPathPredicateFor(baseExpr, pathSegments, filter)
     }
@@ -87,12 +87,12 @@ internal fun predicateForField(
     val originalColumn = baseExpr.originalColumn()
     val refInfo = resolveReference(originalColumn)
         ?: options.referenceResolver?.invoke(originalColumn)
-        ?: error("Field $baseName is not a reference; cannot use nested property $nestedName")
+        ?: error("Field $root is not a reference; cannot use nested property $nestedName")
 
     val projection = options.nestedFieldResolver?.invoke(refInfo.referencedTable, nestedName)
     val targetColumn = projection?.expression ?: run {
         val targetColumns = refInfo.referencedTable.fieldMap()
-        checkNotNull(targetColumns[nestedName]) { "Unknown nested field: $nestedName for reference $baseName" }
+        checkNotNull(targetColumns[nestedName]) { "Unknown nested field: $nestedName for reference $root" }
     }
 
     // The id the base column is compared against must come from the subquery's own source: a

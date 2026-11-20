@@ -34,7 +34,7 @@ class FilterPathSyntaxTest {
     @Test
     fun `a root with a target matches the key without it`() {
         assertEquals(
-            FieldPath("documentId", "documentId[RECEIPT]", "number"),
+            FieldPath("documentId", "documentId[RECEIPT]", "RECEIPT", "number"),
             splitField("documentId[RECEIPT].number") { it == "documentId" },
         )
     }
@@ -51,10 +51,12 @@ class FilterPathSyntaxTest {
         val split = splitField("a[x].b") { it == "a[x]" || it == "a" }
         assertEquals("a[x]", split.baseName)
         assertEquals("a[x]", split.rootSegment)
+        assertNull(split.rootTarget)
     }
 
     @Test
     fun `with no matching key the root is the first segment`() {
-        assertEquals(FieldPath("missing", "missing", "x"), splitField("missing.x") { false })
+        assertEquals(FieldPath("missing", "missing", null, "x"), splitField("missing.x") { false })
+        assertEquals(FieldPath("missing", "missing[X]", "X", "y"), splitField("missing[X].y") { false })
     }
 }

@@ -118,17 +118,13 @@ internal fun resolveField(
         reason = Reason.UNKNOWN_FIELD,
         message = "Unknown filter field: ${split.rootSegment}",
     )
-    // splitField strips only a well-formed `[target]` from the root segment, so what follows the base
-    // name is one.
-    val rootTarget = split.rootSegment.takeIf { it != split.baseName }
-        ?.let { it.substring(split.baseName.length + 1, it.length - 1) }
     val segments = split.path?.split('.').orEmpty()
 
     val hops = mutableListOf<ResolvedHop>()
     val scope = mutableSetOf<String>()
     (rootExpression as? Column<*>)?.let { scope += it.table.scopeName() }
     var current = rootExpression
-    var at = PathSegment(split.rootSegment, split.baseName, rootTarget)
+    var at = PathSegment(split.rootSegment, split.baseName, split.rootTarget)
     for ((position, raw) in segments.withIndex()) {
         if (current.columnType is JsonColumnMarker) {
             if (at.target != null) {
