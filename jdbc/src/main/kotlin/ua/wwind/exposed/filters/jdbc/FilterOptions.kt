@@ -72,6 +72,11 @@ public data class NestedFieldProjection(
  * text; the other types parse every value before any SQL is built and throw [IllegalArgumentException]
  * naming the field when one does not parse. Stored text that does not fit a declared non-string type
  * still fails the cast in the database.
+ * @property maxReferenceHops The most references a filter path may follow, e.g. `1` allows
+ * `orderId.number` and refuses `orderId.customerId.name`; segments of a JSON path do not count. `null`
+ * means no limit. A path past the limit fails with [FilterPathException.Reason.DEPTH_EXCEEDED], so a
+ * caller whose checks cover a fixed depth opts into deeper paths only by raising it. Must not be
+ * negative.
  */
 public data class FilterOptions(
     public val caseSensitiveStrings: Boolean = false,
@@ -81,7 +86,14 @@ public data class FilterOptions(
     public val aggregateFields: Set<String> = emptySet(),
     public val hierarchyResolver: ((Column<*>) -> HierarchyInfo?)? = null,
     public val jsonPathType: ((field: String) -> JsonValueType?)? = null,
-)
+    public val maxReferenceHops: Int? = 1,
+) {
+    init {
+        require(maxReferenceHops == null || maxReferenceHops >= 0) {
+            "maxReferenceHops must be null or non-negative, was $maxReferenceHops"
+        }
+    }
+}
 
 internal fun FilterOptions.usesNormalizedComparison(fieldName: String): Boolean =
     !caseSensitiveStrings && fieldName in normalizedStringFields

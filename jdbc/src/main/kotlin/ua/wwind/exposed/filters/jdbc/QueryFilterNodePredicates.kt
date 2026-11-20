@@ -55,7 +55,11 @@ internal fun predicateForField(
     filter: FieldFilter,
 ): Op<Boolean> {
     val field = filter.field
-    val (baseName, path) = splitField(field) { it in expressions }
+    // The root is looked up as written: a `[target]` on it stays an unknown field here rather than
+    // being dropped, since this builder follows no target.
+    val split = splitField(field) { it in expressions }
+    val baseName = split.rootSegment
+    val path = split.path
     if (path == null) {
         val expr = requireNotNull(expressions[field]) { "Unknown filter field: $field" }
         return predicateFor(expr, filter, field)
@@ -110,31 +114,6 @@ internal fun predicateForField(
         }
 
     return exists(subQuery)
-}
-
-/**
- * A filter field split into the [baseName] it is looked up by and the dot [path] below it; `null` when
- * the whole field is the name.
- */
-internal data class FieldPath(val baseName: String, val path: String?)
-
-/**
- * Splits [field] at the longest dot-delimited prefix [isKey] accepts, so a map can expose namespaced
- * keys such as `product.category` while `product.attributes.color` still reads a JSON path below the
- * key `product.attributes`. When no prefix is a key, the base is the first segment: that is what an
- * unknown-field error names, and what every map without dotted keys resolved to before.
- */
-internal fun splitField(field: String, isKey: (String) -> Boolean): FieldPath {
-    val ends = buildList {
-        var dot = field.indexOf('.')
-        while (dot >= 0) {
-            add(dot)
-            dot = field.indexOf('.', dot + 1)
-        }
-        add(field.length)
-    }
-    val end = ends.lastOrNull { isKey(field.substring(0, it)) } ?: ends.first()
-    return FieldPath(field.substring(0, end), if (end == field.length) null else field.substring(end + 1))
 }
 
 /**

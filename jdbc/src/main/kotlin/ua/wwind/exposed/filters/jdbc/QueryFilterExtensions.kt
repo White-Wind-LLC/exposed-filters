@@ -2,7 +2,6 @@
 
 package ua.wwind.exposed.filters.jdbc
 
-import org.jetbrains.exposed.v1.core.Alias
 import org.jetbrains.exposed.v1.core.Column
 import org.jetbrains.exposed.v1.core.ColumnSet
 import org.jetbrains.exposed.v1.core.Expression
@@ -147,19 +146,30 @@ internal fun ColumnSet.toColumnMap(): Map<String, ExpressionWithColumnType<*>> =
  * checked: a join whose sources share a name nobody filters on (typically the join key) stays usable.
  */
 internal fun ColumnSet.requireUnambiguousFields(root: FilterNode) {
-    if (this is Table) return
+    val byName = fieldsByNameIfAmbiguous() ?: return
+    for (field in root.referencedFields()) byName.requireUnambiguous(field)
+}
+
+/** Same as [requireUnambiguousFields], for the one [field] a path is resolved for. */
+internal fun ColumnSet.requireUnambiguousField(field: String) {
+    fieldsByNameIfAmbiguous()?.requireUnambiguous(field)
+}
+
+/** The fields of this [ColumnSet] grouped by name; `null` when no name is carried twice. */
+private fun ColumnSet.fieldsByNameIfAmbiguous(): Map<String, List<SourceField>>? {
+    if (this is Table) return null
     val byName = sourceFields().groupBy { it.name }
-    val ambiguous = byName.filterValues { it.size > 1 }
-    if (ambiguous.isEmpty()) return
-    for (field in root.referencedFields()) {
-        val baseName = splitField(field) { it in byName }.baseName
-        val candidates = ambiguous[baseName] ?: continue
-        throw IllegalArgumentException(
-            "Ambiguous filter field: '$baseName' is exposed by " +
-                candidates.joinToString { "'${it.source}'" } +
-                ". Map the field to one column explicitly with applyFilters(Map<String, ExpressionWithColumnType<*>>, ...)."
-        )
-    }
+    return byName.takeIf { groups -> groups.values.any { it.size > 1 } }
+}
+
+private fun Map<String, List<SourceField>>.requireUnambiguous(field: String) {
+    val baseName = splitField(field) { it in this }.baseName
+    val candidates = this[baseName]?.takeIf { it.size > 1 } ?: return
+    throw IllegalArgumentException(
+        "Ambiguous filter field: '$baseName' is exposed by " +
+            candidates.joinToString { "'${it.source}'" } +
+            ". Map the field to one column explicitly with applyFilters(Map<String, ExpressionWithColumnType<*>>, ...)."
+    )
 }
 
 /** A field a non-[Table] [ColumnSet] exposes to filters, and the name of the source it comes from. */
@@ -173,9 +183,9 @@ private class SourceField(val name: String, val expression: ExpressionWithColumn
  */
 private fun ColumnSet.sourceFields(): List<SourceField> {
     val sources = flattenSources()
-        ?: return columns.distinct().map { SourceField(it.name, it, it.table.sourceName()) }
+        ?: return columns.distinct().map { SourceField(it.name, it, it.table.scopeName()) }
     val columnFields = sources.flatMap { it.columns }.distinct()
-        .map { SourceField(it.name, it, it.table.sourceName()) }
+        .map { SourceField(it.name, it, it.table.scopeName()) }
     return columnFields + sources.filterIsInstance<QueryAlias>().flatMap { it.computedFields() }
 }
 
@@ -183,7 +193,7 @@ private fun ColumnSet.sourceFields(): List<SourceField> {
  * The sources this [ColumnSet] is assembled from, joins flattened. `null` when a [Join] cannot be
  * taken apart, which leaves the caller with plain columns only.
  */
-private fun ColumnSet.flattenSources(): List<ColumnSet>? = when (this) {
+internal fun ColumnSet.flattenSources(): List<ColumnSet>? = when (this) {
     is Join -> {
         val parts = joinedParts() ?: return null
         (listOf(table) + parts).flatMap { it.flattenSources() ?: return null }
@@ -219,8 +229,6 @@ internal fun FilterNode.referencedFields(): Sequence<String> = when (this) {
     is FilterLeaf -> predicates.asSequence().map { it.field }
     is FilterGroup -> children.asSequence().flatMap { it.referencedFields() }
 }
-
-private fun Table.sourceName(): String = (this as? Alias<*>)?.alias ?: tableName
 
 /**
  * Every field this [Table] exposes to filters: each column held by a Kotlin property under the
