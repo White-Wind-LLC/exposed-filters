@@ -146,6 +146,21 @@ class FilterPathResolutionTest {
     }
 
     @Test
+    fun `a reference whose id column is not on its table is a misconfiguration, not a path failure`() {
+        val misconfigured = deep.copy(
+            referenceResolver = { if (it == FpCustomers.lastOrderId) ReferenceInfo(FpRegions.id, FpOrders) else null },
+        )
+
+        val failure = assertThrows(IllegalArgumentException::class.java) {
+            FpOrders.resolveFilterField("customerId.lastOrderId.number", misconfigured)
+        }
+
+        assertFalse(failure is FilterPathException)
+        assertTrue(failure.message.orEmpty().contains("'customerId.lastOrderId.number'"))
+        assertTrue(failure.message.orEmpty().contains("'lastOrderId'"))
+    }
+
+    @Test
     fun `the default allows one hop`() {
         assertPathFailure(Reason.DEPTH_EXCEEDED, 1, "customerId") {
             FpLines.resolveFilterField("orderId.customerId.name")

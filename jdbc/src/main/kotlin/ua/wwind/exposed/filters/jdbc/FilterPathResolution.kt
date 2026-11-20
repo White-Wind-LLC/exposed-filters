@@ -185,6 +185,11 @@ private fun enterTarget(
     scope: Set<String>,
 ): ResolvedHop {
     val target = reference.referencedTable
+    require(reference.referencedIdColumn.table == target) {
+        "Filter field '$field': the reference at segment '${at.raw}' resolves to " +
+            "${reference.referencedIdColumn.table.tableName}.${reference.referencedIdColumn.name}, " +
+            "which is not a column of ${target.tableName}"
+    }
     val alias = if (target.scopeName() in scope) target.alias("ef_$hopNumber") else null
     val occurrence: Table = alias ?: target
     val projection = options.nestedFieldResolver?.invoke(occurrence, next.name)
