@@ -625,7 +625,8 @@ class FilterPathResolutionTest {
     fun `a target or a dotted key at the root of an ambiguous name splits as resolution does`() {
         val join = RpContainers.join(FpDocumentLinks, JoinType.CROSS)
         val first = RpContainers.select(RpContainers.id, RpContainers.documentId.alias("doc.ref")).alias("first")
-        val second = FpDocumentLinks.select(FpDocumentLinks.id, FpDocumentLinks.documentId.alias("doc.ref")).alias("second")
+        val second =
+            FpDocumentLinks.select(FpDocumentLinks.id, FpDocumentLinks.documentId.alias("doc.ref")).alias("second")
         val subqueries = first.join(second, JoinType.CROSS)
         val cases = listOf(
             Triple(join, "document_id[RECEIPT].number", "document_id"),

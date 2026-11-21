@@ -161,7 +161,8 @@ per hop, the names its source makes visible — the occurrence's name when the h
 projection, the names its source makes visible (a table's or an alias's name, a `QueryAlias`'s alias, a join's parts).
 A plain table counts by its name without the schema, as SQL sees an unaliased `FROM archive.orders`. Hop *i*'s target
 is aliased `ef_<i>` (1-based) when its table name is among them, and read unaliased otherwise — so a one-hop path to a
-different table renders as today. Names starting with `ef_` are reserved by the library, as `ef_tree` and `ef_child` already are.
+table of another name renders as today. Names starting with `ef_` are reserved by the library, as `ef_tree` and
+`ef_child` already are.
 
 An aliased occurrence reaches `nestedFieldResolver` as its `Table` argument (`Alias.delegate` is the target table). A
 resolver that keys by table identity returns `null` for an alias, and the field is then read plainly from the alias.
@@ -224,12 +225,15 @@ public class ResolvedFilterField internal constructor(
 public class ResolvedHop internal constructor(
     public val segment: String,                          // leaving the previous scope, as written: "documentId[RECEIPT]"
     public val referenceColumn: Column<*>,               // original column holding the reference
+    public val referenceExpression: Column<*>,           // that column as the enclosing scope reads it (alias clone)
     public val target: String?,                          // named target of a reference with several targets
     public val discriminator: Column<*>?,                // its discriminator, original
     public val reference: ReferenceInfo,                 // target id column and table, original
     public val occurrence: Table,                        // reference.referencedTable or an alias of it
     public val field: String,                            // the field read in the target
     public val projection: NestedFieldProjection?,
+    public val source: ColumnSet,                        // what the hop reads from: the projection's source or occurrence
+    public val idExpression: ExpressionWithColumnType<*>, // the expression in source the reference is compared with
     public val expression: ExpressionWithColumnType<*>,  // what the hop reads
     public val tables: List<Table>,                      // original tables its subquery reads
 )
