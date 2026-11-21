@@ -25,6 +25,16 @@ public data class NestedFieldProjection(
 )
 
 /**
+ * A reference whose target table [discriminator] selects; [targets] are keyed by the discriminator value a
+ * path writes (`documentId[RECEIPT]`). [discriminator] is a column of the reference's table, and a subquery
+ * the reference is read through must select it too.
+ */
+public data class PolymorphicReferenceInfo(
+    public val discriminator: Column<*>,
+    public val targets: Map<String, ReferenceInfo>,
+)
+
+/**
  * Global options that tune how filter predicates are built.
  *
  * @property caseSensitiveStrings When `false` (default), predicates on `VarChar`/`Text` columns
@@ -46,12 +56,9 @@ public data class NestedFieldProjection(
  * physical FK but the logical one is recorded elsewhere (an annotation, a registry). For a column of
  * a table alias or a subquery it receives the original table column behind the clone, never the clone.
  * `IN_HIERARCHY` auto-detection consults it the same way to find the tree a column points into.
- * @property nestedFieldResolver Replaces what a nested field path reads, given the resolved target
- * table and the nested field name. Unlike [referenceResolver] it is consulted for every nested path,
- * including one Exposed resolves itself, because the reference is not what needs replacing — the
- * column behind it is. Return `null` to read the target table's own column, which is the default and
- * keeps the emitted SQL unchanged. Useful when the readable value lives beside the target table
- * rather than in it, as a translation does.
+ * @property nestedFieldResolver Replaces what one hop reads, given the table it enters and the one field it
+ * reads there. A table met again on the path arrives as its `ef_<n>` alias, and the projection must read that
+ * alias; one that would bind to another scope fails with [IllegalArgumentException].
  * @property aggregateFields Field names whose expressions are aggregates the library cannot recognize
  * on its own, e.g. a `CustomFunction("array_agg", ...)`. Predicates on these fields go to `HAVING`
  * instead of `WHERE`. Exposed's built-in aggregates (`sum()`, `count()`, `min()`, `max()`, `avg()`,
@@ -72,6 +79,10 @@ public data class NestedFieldProjection(
  * text; the other types parse every value before any SQL is built and throw [IllegalArgumentException]
  * naming the field when one does not parse. Stored text that does not fit a declared non-string type
  * still fails the cast in the database.
+ * @property polymorphicReferenceResolver Describes a reference whose target table another column selects, so
+ * a path can name the target: `documentId[RECEIPT].number`. Receives the column behind an alias clone.
+ * @property maxReferenceHops How many references a path may follow (`null`: no limit; JSON segments do not
+ * count). One by default, so deeper paths stay refused until the caller raises it.
  */
 public data class FilterOptions(
     public val caseSensitiveStrings: Boolean = false,
@@ -81,7 +92,15 @@ public data class FilterOptions(
     public val aggregateFields: Set<String> = emptySet(),
     public val hierarchyResolver: ((Column<*>) -> HierarchyInfo?)? = null,
     public val jsonPathType: ((field: String) -> JsonValueType?)? = null,
-)
+    public val polymorphicReferenceResolver: ((Column<*>) -> PolymorphicReferenceInfo?)? = null,
+    public val maxReferenceHops: Int? = 1,
+) {
+    init {
+        require(maxReferenceHops == null || maxReferenceHops >= 0) {
+            "maxReferenceHops must be null or non-negative, was $maxReferenceHops"
+        }
+    }
+}
 
 internal fun FilterOptions.usesNormalizedComparison(fieldName: String): Boolean =
     !caseSensitiveStrings && fieldName in normalizedStringFields

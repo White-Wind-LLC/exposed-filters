@@ -2,7 +2,6 @@
 
 package ua.wwind.exposed.filters.jdbc
 
-import org.jetbrains.exposed.v1.core.Alias
 import org.jetbrains.exposed.v1.core.Column
 import org.jetbrains.exposed.v1.core.ColumnSet
 import org.jetbrains.exposed.v1.core.Expression
@@ -46,6 +45,10 @@ import ua.wwind.exposed.filters.core.FilterRequest
  * A SQL name exposed by more than one source of a Join (e.g. `name` on both joined tables) is
  * ambiguous: filtering on it throws [IllegalArgumentException] instead of picking one of the columns.
  * Use [applyFilters] with an explicit mapping to disambiguate.
+ *
+ * A dotted field follows references from the field it starts at, as [applyFilters] describes.
+ *
+ * @throws FilterPathException when a field's path cannot be resolved (see [resolveFilterField]).
  */
 public fun Query.applyFiltersOn(
     columnSet: ColumnSet,
@@ -62,6 +65,8 @@ public fun Query.applyFiltersOn(
 /**
  * Same as [applyFiltersOn] but allows passing a [mappersModule] to handle predicates
  * for custom column types when standard mappings do not apply.
+ *
+ * @throws FilterPathException when a field's path cannot be resolved (see [resolveFilterField]).
  */
 public fun Query.applyFiltersOn(
     columnSet: ColumnSet,
@@ -83,13 +88,15 @@ public fun Query.applyFiltersOn(
  *
  * Supports both [Column] and [ExpressionWithColumnType] (e.g., `coalesce()`, `concat()`, aliased columns).
  *
- * **Note:** Nested field filters (e.g., `user.name`) are only supported when the expression
- * is a [Column] with a foreign key reference.
+ * A dotted field (`orderId.customerId.name`) follows one reference per segment as a nested `EXISTS`, up to
+ * [FilterOptions.maxReferenceHops]; below a JSON column the rest is a JSON path.
  *
  * A predicate on an aggregate expression (e.g. `qty.sum()`, also inside another expression, or any field
  * listed in [FilterOptions.aggregateFields]) is added to `HAVING`, every other predicate to `WHERE`.
  * An OR/NOT group that touches an aggregate goes to `HAVING` whole. A window function (`over()`) cannot be
  * filtered at the query level that computes it and fails with [IllegalArgumentException].
+ *
+ * @throws FilterPathException when a field's path cannot be resolved (see [resolveFilterField]).
  */
 public fun Query.applyFilters(
     expressions: Map<String, ExpressionWithColumnType<*>>,
@@ -102,6 +109,8 @@ public fun Query.applyFilters(
 
 /**
  * Same as [applyFilters] but allows passing a [mappersModule].
+ *
+ * @throws FilterPathException when a field's path cannot be resolved (see [resolveFilterField]).
  */
 public fun Query.applyFilters(
     expressions: Map<String, ExpressionWithColumnType<*>>,
@@ -147,19 +156,30 @@ internal fun ColumnSet.toColumnMap(): Map<String, ExpressionWithColumnType<*>> =
  * checked: a join whose sources share a name nobody filters on (typically the join key) stays usable.
  */
 internal fun ColumnSet.requireUnambiguousFields(root: FilterNode) {
-    if (this is Table) return
+    val byName = fieldsByNameIfAmbiguous() ?: return
+    for (field in root.referencedFields()) byName.requireUnambiguous(field)
+}
+
+/** Same as [requireUnambiguousFields], for the one [field] a path is resolved for. */
+internal fun ColumnSet.requireUnambiguousField(field: String) {
+    fieldsByNameIfAmbiguous()?.requireUnambiguous(field)
+}
+
+/** The fields of this [ColumnSet] grouped by name; `null` when no name is carried twice. */
+private fun ColumnSet.fieldsByNameIfAmbiguous(): Map<String, List<SourceField>>? {
+    if (this is Table) return null
     val byName = sourceFields().groupBy { it.name }
-    val ambiguous = byName.filterValues { it.size > 1 }
-    if (ambiguous.isEmpty()) return
-    for (field in root.referencedFields()) {
-        val baseName = splitField(field) { it in byName }.baseName
-        val candidates = ambiguous[baseName] ?: continue
-        throw IllegalArgumentException(
-            "Ambiguous filter field: '$baseName' is exposed by " +
-                candidates.joinToString { "'${it.source}'" } +
-                ". Map the field to one column explicitly with applyFilters(Map<String, ExpressionWithColumnType<*>>, ...)."
-        )
-    }
+    return byName.takeIf { groups -> groups.values.any { it.size > 1 } }
+}
+
+private fun Map<String, List<SourceField>>.requireUnambiguous(field: String) {
+    val baseName = splitField(field) { it in this }.baseName
+    val candidates = this[baseName]?.takeIf { it.size > 1 } ?: return
+    throw IllegalArgumentException(
+        "Ambiguous filter field: '$baseName' is exposed by " +
+            candidates.joinToString { "'${it.source}'" } +
+            ". Map the field to one column explicitly with applyFilters(Map<String, ExpressionWithColumnType<*>>, ...)."
+    )
 }
 
 /** A field a non-[Table] [ColumnSet] exposes to filters, and the name of the source it comes from. */
@@ -173,9 +193,9 @@ private class SourceField(val name: String, val expression: ExpressionWithColumn
  */
 private fun ColumnSet.sourceFields(): List<SourceField> {
     val sources = flattenSources()
-        ?: return columns.distinct().map { SourceField(it.name, it, it.table.sourceName()) }
+        ?: return columns.distinct().map { SourceField(it.name, it, it.table.qualifier()) }
     val columnFields = sources.flatMap { it.columns }.distinct()
-        .map { SourceField(it.name, it, it.table.sourceName()) }
+        .map { SourceField(it.name, it, it.table.qualifier()) }
     return columnFields + sources.filterIsInstance<QueryAlias>().flatMap { it.computedFields() }
 }
 
@@ -183,7 +203,7 @@ private fun ColumnSet.sourceFields(): List<SourceField> {
  * The sources this [ColumnSet] is assembled from, joins flattened. `null` when a [Join] cannot be
  * taken apart, which leaves the caller with plain columns only.
  */
-private fun ColumnSet.flattenSources(): List<ColumnSet>? = when (this) {
+internal fun ColumnSet.flattenSources(): List<ColumnSet>? = when (this) {
     is Join -> {
         val parts = joinedParts() ?: return null
         (listOf(table) + parts).flatMap { it.flattenSources() ?: return null }
@@ -219,8 +239,6 @@ internal fun FilterNode.referencedFields(): Sequence<String> = when (this) {
     is FilterLeaf -> predicates.asSequence().map { it.field }
     is FilterGroup -> children.asSequence().flatMap { it.referencedFields() }
 }
-
-private fun Table.sourceName(): String = (this as? Alias<*>)?.alias ?: tableName
 
 /**
  * Every field this [Table] exposes to filters: each column held by a Kotlin property under the

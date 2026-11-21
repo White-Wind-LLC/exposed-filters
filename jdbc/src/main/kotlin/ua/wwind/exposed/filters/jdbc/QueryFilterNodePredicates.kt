@@ -3,12 +3,12 @@ package ua.wwind.exposed.filters.jdbc
 import org.jetbrains.exposed.v1.core.Alias
 import org.jetbrains.exposed.v1.core.Column
 import org.jetbrains.exposed.v1.core.ExpressionWithColumnType
-import org.jetbrains.exposed.v1.core.JsonColumnMarker
 import org.jetbrains.exposed.v1.core.Op
 import org.jetbrains.exposed.v1.core.Table
 import org.jetbrains.exposed.v1.core.and
 import org.jetbrains.exposed.v1.core.eq
 import org.jetbrains.exposed.v1.core.exists
+import org.jetbrains.exposed.v1.core.isNotNull
 import org.jetbrains.exposed.v1.core.not
 import org.jetbrains.exposed.v1.core.or
 import org.jetbrains.exposed.v1.jdbc.andWhere
@@ -54,87 +54,35 @@ internal fun predicateForField(
     expressions: Map<String, ExpressionWithColumnType<*>>,
     filter: FieldFilter,
 ): Op<Boolean> {
-    val field = filter.field
-    val (baseName, path) = splitField(field) { it in expressions }
-    if (path == null) {
-        val expr = requireNotNull(expressions[field]) { "Unknown filter field: $field" }
-        return predicateFor(expr, filter, field)
+    val resolved = resolveField(expressions, filter.field)
+    val inner = if (resolved.jsonPath.isNotEmpty()) {
+        jsonPathPredicateFor(resolved.expression, resolved.jsonPath, filter)
+    } else {
+        predicateFor(resolved.expression, filter, filter.field)
     }
-
-    // Dot-path support:
-    // 1) JSON/JSONB field path: payload.a.b.c
-    // 2) Existing reference nested field: referenceField.nestedField
-    val pathSegments = path.split('.')
-    require(pathSegments.none { it.isEmpty() }) { "Invalid nested field path: $field" }
-
-    val baseExpr = checkNotNull(expressions[baseName]) { "Unknown filter field: $baseName" }
-    if (baseExpr.columnType is JsonColumnMarker) {
-        return jsonPathPredicateFor(baseExpr, pathSegments, filter)
-    }
-
-    val nestedName = pathSegments.joinToString(".")
-    require(baseExpr is Column<*>) {
-        "Nested field filters (e.g., '$field') are only supported for Column types, " +
-                "not for computed expressions."
-    }
-
-    // A subquery or alias column is a clone without `referee`: resolve the reference on the column it
-    // projects, but keep comparing against the clone, which is what the outer query can see.
-    val originalColumn = baseExpr.originalColumn()
-    val refInfo = resolveReference(originalColumn)
-        ?: options.referenceResolver?.invoke(originalColumn)
-        ?: error("Field $baseName is not a reference; cannot use nested property $nestedName")
-
-    val projection = options.nestedFieldResolver?.invoke(refInfo.referencedTable, nestedName)
-    val targetColumn = projection?.expression ?: run {
-        val targetColumns = refInfo.referencedTable.fieldMap()
-        checkNotNull(targetColumns[nestedName]) { "Unknown nested field: $nestedName for reference $baseName" }
-    }
-
-    // The id the base column is compared against must come from the subquery's own source: a
-    // projection that renames or replaces the target table has to say where the id went.
-    val idExpr: ExpressionWithColumnType<*> = projection?.idExpression ?: refInfo.referencedIdColumn.also { id ->
-        require(projection == null || id in projection.source.columns) {
-            "Nested field $field: the projection's source does not expose ${id.table.tableName}.${id.name}; " +
-                "set NestedFieldProjection.idExpression to the expression in the source that holds it"
-        }
-    }
-
-    // Build subquery: select referenced id from target table where target predicate holds.
-    val targetPredicate = predicateFor(targetColumn, filter, field)
-    val subQuery = (projection?.source ?: refInfo.referencedTable)
-        .selectAll()
-        .andWhere {
-            @Suppress("UNCHECKED_CAST")
-            ((idExpr as ExpressionWithColumnType<Any?>).eq(baseExpr as Column<Any?>)) and targetPredicate
-        }
-
-    return exists(subQuery)
+    return resolved.hops.foldRight(inner) { hop, acc -> hopPredicate(hop, acc, filter.field) }
 }
 
 /**
- * A filter field split into the [baseName] it is looked up by and the dot [path] below it; `null` when
- * the whole field is the name.
+ * Wraps [inner] in the hop's correlated `EXISTS`. A target's discriminator is checked outside it, with
+ * `IS NOT NULL` so that a `NULL` discriminator gives false, not unknown, and the row matches under `NOT`.
  */
-internal data class FieldPath(val baseName: String, val path: String?)
-
-/**
- * Splits [field] at the longest dot-delimited prefix [isKey] accepts, so a map can expose namespaced
- * keys such as `product.category` while `product.attributes.color` still reads a JSON path below the
- * key `product.attributes`. When no prefix is a key, the base is the first segment: that is what an
- * unknown-field error names, and what every map without dotted keys resolved to before.
- */
-internal fun splitField(field: String, isKey: (String) -> Boolean): FieldPath {
-    val ends = buildList {
-        var dot = field.indexOf('.')
-        while (dot >= 0) {
-            add(dot)
-            dot = field.indexOf('.', dot + 1)
-        }
-        add(field.length)
+context(mappersModule: ColumnMappersModule?, options: FilterOptions)
+internal fun hopPredicate(hop: ResolvedHop, inner: Op<Boolean>, field: String): Op<Boolean> {
+    val correlated = exists(
+        hop.source.selectAll().andWhere {
+            @Suppress("UNCHECKED_CAST")
+            (hop.idExpression as ExpressionWithColumnType<Any?>).eq(hop.referenceExpression as Column<Any?>) and inner
+        },
+    )
+    val target = hop.target ?: return correlated
+    val discriminator = checkNotNull(hop.discriminator) { "A hop naming target '$target' carries no discriminator" }
+    // Read from the occurrence the reference is read from; a target is a tag, so case always matters.
+    val scoped = checkNotNull(hop.referenceExpression.scopedDiscriminator(discriminator)) {
+        "The scope of the reference at '${hop.segment}' carries no discriminator; resolution should have refused it"
     }
-    val end = ends.lastOrNull { isKey(field.substring(0, it)) } ?: ends.first()
-    return FieldPath(field.substring(0, end), if (end == field.length) null else field.substring(end + 1))
+    val chosen = context(options.copy(caseSensitiveStrings = true)) { eqValue(scoped, target, field) }
+    return scoped.isNotNull() and chosen and correlated
 }
 
 /**

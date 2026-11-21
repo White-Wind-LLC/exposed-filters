@@ -566,4 +566,63 @@ abstract class QueryFilterHierarchyContract {
         val error = assertThrows(IllegalStateException::class.java) { productNames(hier("name")) }
         assertTrue(error.message!!.contains("IN_HIERARCHY on field 'name'"), error.message)
     }
+
+    @Test
+    fun `filterHierarchy exposes the tree of a referencing column`() {
+        assertEquals(HierarchyInfo(HCategories.id, HCategories.parentId), HProducts.categoryId.filterHierarchy())
+    }
+
+    @Test
+    fun `filterHierarchy resolves a logical reference through referenceResolver`() {
+        val options = FilterOptions(
+            referenceResolver = { column ->
+                if (column == HListings.categoryId) ReferenceInfo(HCategories.id, HCategories) else null
+            },
+        )
+        assertEquals(
+            HierarchyInfo(HCategories.id, HCategories.parentId),
+            HListings.categoryId.filterHierarchy(options),
+        )
+    }
+
+    @Test
+    fun `filterHierarchy resolves a column of an alias on the column it projects`() {
+        val alias = HProducts.alias("p")
+        assertEquals(
+            HierarchyInfo(HCategories.id, HCategories.parentId),
+            alias[HProducts.categoryId].filterHierarchy(),
+        )
+    }
+
+    @Test
+    fun `filterHierarchy takes the resolver's tree over a reference and auto-detection`() {
+        val folders = HierarchyInfo(HFolders.id, HFolders.parentId)
+        val options = FilterOptions(
+            hierarchyResolver = { column ->
+                if (column == HListings.categoryId || column == HProducts.categoryId) folders else null
+            },
+            referenceResolver = { column ->
+                if (column == HListings.categoryId) ReferenceInfo(HCategories.id, HCategories) else null
+            },
+        )
+        // Without the resolver, the first leads into the categories through referenceResolver, the second through
+        // its foreign key.
+        assertEquals(folders, HListings.categoryId.filterHierarchy(options))
+        assertEquals(folders, HProducts.categoryId.filterHierarchy(options))
+    }
+
+    @Test
+    fun `filterHierarchy fails on several self-references`() {
+        val error = assertThrows(IllegalStateException::class.java) { HNodes.id.filterHierarchy() }
+        assertTrue(error.message!!.contains("several self-references"), error.message)
+    }
+
+    @Test
+    fun `filterHierarchy refuses a parent column on another table`() {
+        val options = FilterOptions(
+            hierarchyResolver = { HierarchyInfo(HCategories.id, HProducts.categoryId) },
+        )
+        val error = assertThrows(IllegalArgumentException::class.java) { HProducts.id.filterHierarchy(options) }
+        assertTrue(error.message!!.contains("is not on the tree's table"), error.message)
+    }
 }

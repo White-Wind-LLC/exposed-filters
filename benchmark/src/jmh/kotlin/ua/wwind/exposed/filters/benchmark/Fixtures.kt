@@ -22,6 +22,7 @@ import org.jetbrains.exposed.v1.jdbc.Query
 import org.jetbrains.exposed.v1.jdbc.select
 import org.jetbrains.exposed.v1.jdbc.selectAll
 import ua.wwind.exposed.filters.core.FilterRequest
+import ua.wwind.exposed.filters.jdbc.FilterOptions
 import ua.wwind.exposed.filters.jdbc.propertyToColumnMap
 import ua.wwind.exposed.filters.rest.parseFilterRequestOrNull
 
@@ -49,6 +50,12 @@ object Products : IntIdTable("products") {
     val warehouseId = reference("warehouse_id", Warehouses)
 }
 
+/** Second hop for `NESTED_REF_2_HOPS`: a separate table, so the `Products` and `Warehouses` SELECT lists stay as they were. */
+object Stocks : IntIdTable("stocks") {
+    val productId = reference("product_id", Products)
+    val qty = integer("qty")
+}
+
 /** Plain two-table join: fields resolve by SQL name through Exposed's internal `joinParts`. */
 val ProductsWithWarehouse = Products innerJoin Warehouses
 
@@ -73,6 +80,7 @@ enum class Scenario(
     val base: () -> Query,
     val manual: () -> Op<Boolean>,
     val cachedMap: () -> Map<String, ExpressionWithColumnType<*>>,
+    val options: FilterOptions = FilterOptions(),
 ) {
     SIMPLE_EQ(
         """{"filters":{"category":[{"op":"EQ","value":"cat3"}]}}""",
@@ -117,6 +125,25 @@ enum class Scenario(
             )
         },
         { Products.propertyToColumnMap() },
+    ),
+    NESTED_REF_2_HOPS(
+        """{"filters":{"productId.warehouseId.name":[{"op":"EQ","value":"Warehouse 3"}]}}""",
+        Stocks, { Stocks.selectAll() },
+        {
+            exists(
+                Products.selectAll().where {
+                    (Products.id eq Stocks.productId) and
+                        exists(
+                            Warehouses.selectAll().where {
+                                (Warehouses.id eq Products.warehouseId) and
+                                    (Warehouses.name.lowerCase() eq "warehouse 3")
+                            }
+                        )
+                }
+            )
+        },
+        { Stocks.propertyToColumnMap() },
+        FilterOptions(maxReferenceHops = 2),
     ),
     JOIN_COLUMNS(
         """{"filters":{"category":[{"op":"EQ","value":"cat3"}],"city":[{"op":"EQ","value":"City 1"}]}}""",
