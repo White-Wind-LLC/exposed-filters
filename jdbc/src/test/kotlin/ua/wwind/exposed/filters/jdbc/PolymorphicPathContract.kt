@@ -7,6 +7,7 @@ import org.jetbrains.exposed.v1.core.alias
 import org.jetbrains.exposed.v1.core.and
 import org.jetbrains.exposed.v1.core.eq
 import org.jetbrains.exposed.v1.core.exists
+import org.jetbrains.exposed.v1.core.isNotNull
 import org.jetbrains.exposed.v1.core.lowerCase
 import org.jetbrains.exposed.v1.jdbc.SchemaUtils
 import org.jetbrains.exposed.v1.jdbc.insert
@@ -89,6 +90,7 @@ internal val rpDocumentReferences: (Column<*>) -> PolymorphicReferenceInfo? = { 
  * containers   1 (RECEIPT, document 1, kind "receipt", ref 1)
  *              2 (SHIPMENT, document 1, kind "RECEIPT", ref 1)
  *              3 (nothing)
+ *              4 (no type, document 1)
  * moves        50 → container 1, 51 → container 2
  * ```
  */
@@ -132,6 +134,7 @@ abstract class PolymorphicPathContract {
         insertContainer(1, DocKind.RECEIPT, document = 1, kind = "receipt", ref = 1)
         insertContainer(2, DocKind.SHIPMENT, document = 1, kind = "RECEIPT", ref = 1)
         insertContainer(3, type = null, document = null, kind = null, ref = null)
+        insertContainer(4, type = null, document = 1, kind = null, ref = null)
         listOf(50 to 1, 51 to 2).forEach { (id, container) ->
             RpMoves.insert {
                 it[RpMoves.id] = id
@@ -162,7 +165,7 @@ abstract class PolymorphicPathContract {
 
     @Test
     fun `the named target is read and other kinds are excluded`() {
-        // Container 2 points at id 1 too, but into shipments.
+        // Containers 2 and 4 point at id 1 too: into shipments, and into no table.
         assertEquals(listOf(1), containerIds(eq("documentId[RECEIPT].number", "R-1")))
     }
 
@@ -185,8 +188,10 @@ abstract class PolymorphicPathContract {
 
     @Test
     fun `under NOT`() {
+        // Container 4 has no type: like a missing link, it does not match and so matches under NOT.
         val receipt = FilterLeaf(listOf(FieldFilter("documentId[RECEIPT].number", FilterOperator.EQ, listOf("R-1"))))
-        assertEquals(listOf(2, 3), containerIds(FilterRequest(FilterGroup(FilterCombinator.NOT, listOf(receipt)))))
+        val notReceipt = FilterRequest(FilterGroup(FilterCombinator.NOT, listOf(receipt)))
+        assertEquals(listOf(2, 3, 4), containerIds(notReceipt))
     }
 
     @Test
@@ -208,12 +213,12 @@ abstract class PolymorphicPathContract {
     }
 
     @Test
-    fun `the discriminator sits outside the subquery`() {
+    fun `the discriminator is guarded against NULL outside the subquery`() {
         transaction {
             val library = RpContainers.selectAll()
                 .applyFiltersOn(RpContainers, eq("documentId[RECEIPT].number", "R-1"), polymorphic)
             val manual = RpContainers.selectAll().where {
-                (RpContainers.documentType eq DocKind.RECEIPT) and exists(
+                RpContainers.documentType.isNotNull() and (RpContainers.documentType eq DocKind.RECEIPT) and exists(
                     RpReceipts.selectAll().where {
                         (RpReceipts.id eq RpContainers.documentId) and (RpReceipts.number.lowerCase() eq "r-1")
                     },

@@ -127,12 +127,13 @@ column read through the occurrence. It is rendered exactly as today
 A hop through a reference with several targets adds its discriminator outside the subquery:
 
 ```
-<discriminator> = <target> AND EXISTS (…)
+<discriminator> IS NOT NULL AND <discriminator> = <target> AND EXISTS (…)
 ```
 
 The discriminator is read from the same table occurrence as the reference column — the alias clone when the reference
 column is one. The target is converted like an `EQ` value on the discriminator (custom mappers, enums by constant name),
-but compared case-sensitively: it is a tag, not user text.
+but compared case-sensitively: it is a tag, not user text. The `IS NOT NULL` guard keeps the predicate two-valued when
+the discriminator is `NULL`, so such a row matches under `NOT`, like a missing link.
 
 A `NULL` reference anywhere on the path makes its `EXISTS` false: the row does not match, and matches under `NOT`.
 
