@@ -16,7 +16,8 @@ All notable changes to this project will be documented in this file.
   `FilterOptions.polymorphicReferenceResolver` and `PolymorphicReferenceInfo`
   ([#38](https://github.com/White-Wind-LLC/exposed-filters/issues/38)). Rows of other targets are excluded; a row with
   a `NULL` discriminator does not match and matches under `NOT`.
-- JDBC: a table met twice on a path is aliased `ef_<n>`. **Behavior change**: a one-hop self-reference such as
+- JDBC: a table met twice on a path is aliased `ef_<n>`, a plain table compared by its name without the schema, as
+  SQL sees an unaliased `archive.orders`. **Behavior change**: a one-hop self-reference such as
   `parentId.name` rendered `categories.id = categories.parent_id` inside the subquery, comparing each row with itself;
   it is now aliased and correct. Names starting with `ef_` are reserved.
 - JDBC: new `resolveFilterField` (on `ColumnSet` and on an expression map) returns the resolved path as

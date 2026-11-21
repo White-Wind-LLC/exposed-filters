@@ -183,9 +183,9 @@ private class SourceField(val name: String, val expression: ExpressionWithColumn
  */
 private fun ColumnSet.sourceFields(): List<SourceField> {
     val sources = flattenSources()
-        ?: return columns.distinct().map { SourceField(it.name, it, it.table.scopeName()) }
+        ?: return columns.distinct().map { SourceField(it.name, it, it.table.qualifier()) }
     val columnFields = sources.flatMap { it.columns }.distinct()
-        .map { SourceField(it.name, it, it.table.scopeName()) }
+        .map { SourceField(it.name, it, it.table.qualifier()) }
     return columnFields + sources.filterIsInstance<QueryAlias>().flatMap { it.computedFields() }
 }
 

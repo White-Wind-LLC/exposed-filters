@@ -306,14 +306,15 @@ private fun checkProjectionScope(
     expression: Expression<*>,
     outside: Set<String>,
 ) {
-    val visible = projection.source.scopeNames()
-    val shadowed = visible.intersect(outside)
+    val shadowed = projection.source.scopeNames().intersect(outside)
     require(shadowed.isEmpty()) {
         "Filter field '$field': the projection at segment '${at.raw}' makes ${shadowed.joinToString()} visible, " +
             "which is already in scope outside it; join an alias of it in the source instead"
     }
+    // A column is rendered with its schema, so only the same qualifier binds it to the source.
+    val visible = projection.source.scopeNames { it.qualifier() }
     listOf("expression" to expression, "idExpression" to idExpression).forEach { (label, value) ->
-        val foreign = value.referencedColumns().map { it.table.scopeName() }.filterNot { it in visible }.distinct()
+        val foreign = value.referencedColumns().map { it.table.qualifier() }.filterNot { it in visible }.distinct()
         require(foreign.isEmpty()) {
             "Filter field '$field': the $label of the projection at segment '${at.raw}' reads " +
                 "${foreign.joinToString()}, which its source does not make visible (${visible.joinToString()})"
@@ -360,21 +361,30 @@ private fun pathFailure(
     message = "Filter field '$field': segment '${segment.raw}' at position $position $problem",
 )
 
-/** The name SQL refers to this table by within a query: an alias's name, or the table name. */
-internal fun Table.scopeName(): String = (this as? Alias<*>)?.alias ?: tableName
+/**
+ * The name SQL refers to this table by within a query: an alias's name, or the table name without its
+ * schema — an unaliased `FROM archive.orders` is `orders` to the conditions of that query, and hides an
+ * outer `orders` from them.
+ */
+internal fun Table.scopeName(): String =
+    (this as? Alias<*>)?.alias ?: if (schemaName == null) tableName else tableName.substringAfterLast('.')
+
+/** The qualifier a column of this table is rendered with: an alias's name, or the table name with its schema. */
+internal fun Table.qualifier(): String = (this as? Alias<*>)?.alias ?: tableName
 
 /**
  * The names this source makes visible to the conditions of a query reading it: a table's or an
- * alias's name, a subquery's alias, and those of every part of a join.
+ * alias's [name], a subquery's alias, and those of every part of a join.
  */
-internal fun ColumnSet.scopeNames(): Set<String> = when (this) {
-    is Table -> setOf(scopeName())
+internal fun ColumnSet.scopeNames(name: (Table) -> String = { it.scopeName() }): Set<String> = when (this) {
+    is Table -> setOf(name(this))
     is QueryAlias -> setOf(alias)
-    is Join -> flattenSources()?.flatMapTo(LinkedHashSet()) { it.scopeNames() } ?: columnTableNames()
-    else -> columnTableNames()
+    is Join -> flattenSources()?.flatMapTo(LinkedHashSet()) { it.scopeNames(name) } ?: columnTableNames(name)
+    else -> columnTableNames(name)
 }
 
-private fun ColumnSet.columnTableNames(): Set<String> = columns.mapTo(LinkedHashSet()) { it.table.scopeName() }
+private fun ColumnSet.columnTableNames(name: (Table) -> String): Set<String> =
+    columns.mapTo(LinkedHashSet()) { name(it.table) }
 
 /**
  * The tables a query reading this source reads, aliases unwrapped: a table itself, the parts of a

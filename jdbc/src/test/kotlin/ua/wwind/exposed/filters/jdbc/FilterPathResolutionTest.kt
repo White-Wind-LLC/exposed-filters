@@ -76,6 +76,13 @@ private object FpCategories : Table("fp_categories") {
     override val primaryKey = PrimaryKey(id)
 }
 
+/** An archived copy of [FpOrders] in another schema: unaliased, SQL calls both `fp_orders`. */
+private object FpArchivedOrders : Table("archive.fp_orders") {
+    val id: Column<Int> = integer("id")
+    val number: Column<String> = varchar("number", 20)
+    override val primaryKey = PrimaryKey(id)
+}
+
 /** The containers table of [RpContainers] modelled without its discriminator, as a narrower view of it. */
 private object FpNarrowContainers : Table("rp_containers") {
     val id: Column<Int> = integer("id")
@@ -179,6 +186,47 @@ class FilterPathResolutionTest {
         assertEquals("ef_2", occurrence.alias)
         assertEquals(ReferenceInfo(FpOrders.id, FpOrders), back.reference)
         assertEquals(occurrence[FpOrders.number], resolved.expression)
+    }
+
+    /** An order's archived copy, and an archived order's live one, share the order's id. */
+    private val archived = deep.copy(
+        referenceResolver = { column ->
+            when (column) {
+                FpOrders.id -> ReferenceInfo(FpArchivedOrders.id, FpArchivedOrders)
+                FpArchivedOrders.id -> ReferenceInfo(FpOrders.id, FpOrders)
+                else -> null
+            }
+        },
+    )
+
+    @Test
+    fun `a table of another schema with the name of one in scope is aliased`() {
+        val toArchive = FpOrders.resolveFilterField("id.number", archived).hops.single()
+        val archive = toArchive.occurrence as Alias<*>
+        assertEquals("ef_1", archive.alias)
+        assertSame(FpArchivedOrders, archive.delegate)
+
+        val fromArchive = FpArchivedOrders.resolveFilterField("id.number", archived).hops.single()
+        assertEquals("ef_1", (fromArchive.occurrence as Alias<*>).alias)
+    }
+
+    @Test
+    fun `an expression over a same-named table of another schema is not made visible by the source`() {
+        val options = archived.copy(
+            nestedFieldResolver = { table, name ->
+                if (table === FpOrders && name == "number") {
+                    NestedFieldProjection(FpOrders, FpArchivedOrders.number)
+                } else {
+                    null
+                }
+            },
+        )
+
+        val failure = assertThrows(IllegalArgumentException::class.java) {
+            FpLines.resolveFilterField("orderId.number", options)
+        }
+        assertFalse(failure is FilterPathException)
+        assertTrue(failure.message.orEmpty().contains("reads archive.fp_orders"), failure.message)
     }
 
     @Test
