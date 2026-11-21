@@ -5,6 +5,34 @@ All notable changes to this project will be documented in this file.
 ## [Unreleased]
 
 - Dependencies: Exposed 1.5.0 → 1.6.0.
+- JDBC: filter paths follow any number of references, `orderId.customerId.regionId.name`, and may end in a JSON path
+  behind them ([#37](https://github.com/White-Wind-LLC/exposed-filters/issues/37)). Each hop is one nested `EXISTS`;
+  SQL of paths that resolved before is unchanged, except the self-reference below. A quote in a JSON path segment is
+  bound as a parameter (Exposed 1.6.0), not refused, and a test pins it.
+- JDBC: new `FilterOptions.maxReferenceHops` (default `1`, `null` for no limit; a negative value fails) limits the
+  references a path follows. **Behavior change**: a path of two or more hops is refused with `DEPTH_EXCEEDED` until the
+  limit is raised; it failed with "Unknown nested field" before.
+- JDBC: a hop through a reference with several targets, `documentId[RECEIPT].senderId.name`, described by the new
+  `FilterOptions.polymorphicReferenceResolver` and `PolymorphicReferenceInfo`
+  ([#38](https://github.com/White-Wind-LLC/exposed-filters/issues/38)). Rows of other targets are excluded; a row with
+  a `NULL` discriminator does not match and matches under `NOT`.
+- JDBC: a table met twice on a path is aliased `ef_<n>`. **Behavior change**: a one-hop self-reference such as
+  `parentId.name` rendered `categories.id = categories.parent_id` inside the subquery, comparing each row with itself;
+  it is now aliased and correct. Names starting with `ef_` are reserved.
+- JDBC: new `resolveFilterField` (on `ColumnSet` and on an expression map) returns the resolved path as
+  `ResolvedFilterField` and `ResolvedHop` without building SQL, so a consumer checks every hop (read access to each
+  table in `ResolvedHop.tables`, an allow-list of fields, a depth limit) by the library's own rules. New
+  `Column<*>.filterHierarchy` exposes the tree an `IN_HIERARCHY` column is compared against.
+- JDBC: new `FilterPathException`, an `IllegalArgumentException` with the field, segment index, segment and a `Reason`.
+  **Behavior change**: path failures that threw `IllegalStateException` (an unknown base of a dotted path, an unknown
+  nested field, a column that is not a reference) now throw `FilterPathException`.
+- JDBC: a `nestedFieldResolver` projection is checked before SQL is built. **Behavior change**: a projection whose
+  source exposes a table already in scope on the path, or whose expression reads a table its source does not expose,
+  now fails with `IllegalArgumentException`; it rendered SQL that compared against the wrong row.
+- JDBC: **Behavior change**: `nestedFieldResolver` is called once per hop with one field name, never a dotted
+  remainder, and receives an `Alias` of the target table when the hop is aliased; a resolver that keys by table identity
+  returns `null` for it and the field is read from the alias.
+- **Not binary-compatible** with 1.15.x: `FilterOptions` changed constructor arity, recompile.
 
 ## [1.15.0] - 2026-10-15
 

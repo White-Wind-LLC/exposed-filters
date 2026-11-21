@@ -394,8 +394,8 @@ Notes:
 ## Filtering by related entities (references)
 
 - You can filter by a field of a related entity using dot-paths on reference columns: `referenceField.nestedField`.
-- Under the hood, this is implemented via an `EXISTS` subquery against the referenced table.
-- Currently supports one-level nesting on reference columns.
+- A path follows any number of references: `orderId.customerId.regionId.name`. Each hop is one `EXISTS` subquery
+  nested in the previous one.
 - A column of a table alias or a subquery (`QueryAlias`) behaves like the reference it projects: the path
   resolves through the original column and the subquery is correlated with the aliased one.
 
@@ -409,13 +409,149 @@ Example: filter products by warehouse name prefix
 }
 ```
 
+Example: filter orders by the name of their customer's region (orders → customers → regions)
+
+```json
+{
+  "filters": {
+    "customerId.regionId.name": [ { "op": "EQ", "value": "North" } ]
+  }
+}
+```
+
+```sql
+EXISTS (SELECT … FROM customers WHERE customers.id = orders.customer_id AND
+  EXISTS (SELECT … FROM regions WHERE regions.id = customers.region_id AND LOWER(regions.name) = ?))
+```
+
+A `NULL` reference anywhere on the path makes its `EXISTS` false: the row does not match, and matches under `NOT`.
+
 Constraints:
 
-- Nested paths are allowed only on reference columns; using `field.subField` on a non-reference column raises an error
-  unless a `referenceResolver` claims it (see below).
+- Nested paths are allowed only on reference columns; using `field.subField` on a non-reference column raises a
+  `FilterPathException` unless a `referenceResolver` claims it (see below).
 - Operator constraints still apply based on the target column type (e.g., `CONTAINS`/`STARTS_WITH` only for strings).
-- Path nesting for references is limited to one level (e.g., `warehouseId.name`). Multi-hop like `a.b.c` is not
-  supported.
+- A path may follow at most `FilterOptions.maxReferenceHops` references. The default is `1`, so
+  `customerId.regionId.name` is refused until you raise it (`null` removes the limit; a negative value fails when the
+  options are created). A segment of a JSON path does not count.
+
+```kotlin
+val options = FilterOptions(maxReferenceHops = 3)
+Orders.selectAll().applyFiltersOn(Orders, filter, options)
+```
+
+### Tables met twice on a path
+
+A table that appears twice on a path (a self-reference such as `parentId.parentId.name` on categories, or a path that
+returns to the root table) is aliased so the inner occurrence never shadows the outer one. Hop *n* is aliased
+`ef_<n>` (1-based) when its table is already in scope, and read unaliased otherwise:
+
+```sql
+EXISTS (SELECT … FROM categories ef_1 WHERE ef_1.id = categories.parent_id AND
+  EXISTS (SELECT … FROM categories ef_2 WHERE ef_2.id = ef_1.parent_id AND LOWER(ef_2.name) = ?))
+```
+
+Names starting with `ef_` are reserved by the library.
+
+### A reference with several targets
+
+A row may store a document id next to a document type, and the type decides which table the id points into.
+`FilterOptions.polymorphicReferenceResolver` describes such a column: the discriminator column (on the same table) and
+the target for each of its values. A path names the target it follows in brackets, after the reference segment:
+`documentId[RECEIPT].senderId.name`.
+
+```kotlin
+object Containers : Table("containers") {
+    val id = integer("id")
+    val documentType = varchar("document_type", 20).nullable()
+    val documentId = integer("document_id").nullable()
+}
+
+val options = FilterOptions(
+    maxReferenceHops = 2,
+    polymorphicReferenceResolver = { column ->
+        if (column === Containers.documentId) {
+            PolymorphicReferenceInfo(
+                discriminator = Containers.documentType,
+                targets = mapOf(
+                    "RECEIPT" to ReferenceInfo(Receipts.id, Receipts),
+                    "SHIPMENT" to ReferenceInfo(Shipments.id, Shipments),
+                ),
+            )
+        } else {
+            null
+        }
+    },
+)
+```
+
+```json
+{
+  "filters": {
+    "documentId[RECEIPT].senderId.name": [ { "op": "STARTS_WITH", "value": "Acme" } ]
+  }
+}
+```
+
+The hop renders the discriminator test outside the subquery:
+
+```sql
+containers.document_type IS NOT NULL AND containers.document_type = ? AND EXISTS (SELECT … FROM receipts WHERE …)
+```
+
+- The target is compared case-sensitively (it is a tag, not user text) and converted like an `EQ` value on the
+  discriminator, so custom mappers and enums by constant name work.
+- A row whose discriminator is `NULL` does not match, and matches under `NOT`, like a missing link.
+- A hop through such a reference counts as one towards `maxReferenceHops`.
+- Without a target, a path through the column fails with `TARGET_REQUIRED`; a target on a column the resolver does not
+  describe fails with `TARGET_NOT_SUPPORTED`. A path cannot end at a target (`documentId[RECEIPT]` alone).
+
+### Checking a path before applying it
+
+`resolveFilterField` resolves a field exactly as filtering does, without building SQL or reading rows. It returns
+every hop with its reference column, target, the table it reads (`occurrence`, possibly an alias) and `tables`, the
+original tables its subquery reads. Use it to check each hop (read access to each table, an allow-list of fields, a
+depth limit of your own) with the library's own resolution rules, or to report which stored filters a new rule would
+refuse.
+
+```kotlin
+val resolved = Orders.resolveFilterField("customerId.regionId.name", options)
+
+resolved.hops.forEach { hop ->
+    check(hop.tables.all { it in readableTables }) { "No access to ${hop.segment}" }
+}
+check(resolved.hops.last().field in allowedRegionFields)
+```
+
+A `Map<String, ExpressionWithColumnType<*>>` has the same function for custom expression maps. For a column compared
+with `IN_HIERARCHY`, `column.filterHierarchy(options)` returns the tree the library compares it against, so the tree of
+`resolved.expression` can be checked without repeating the detection.
+
+### Path errors
+
+Every path that cannot be resolved throws `FilterPathException`, an `IllegalArgumentException` that carries the
+`field` as written, the `segmentIndex` (0 is the root), the failing `segment` and a `reason`:
+
+| Reason | Meaning |
+| --- | --- |
+| `UNKNOWN_FIELD` | the root is not a field of the source, or a segment is not a field of the table it reaches |
+| `NOT_A_COLUMN` | the path continues below a computed expression, which has no reference to follow |
+| `NOT_A_REFERENCE` | the path continues below a column that neither references a table nor holds JSON |
+| `TARGET_REQUIRED` | the column has several targets and the path names none |
+| `TARGET_NOT_SUPPORTED` | a target is written where the column has no choice of targets (including a JSON column) |
+| `UNKNOWN_TARGET` | the resolver does not know the named target |
+| `TARGET_WITHOUT_FIELD` | the path ends at a target |
+| `INVALID_SEGMENT` | an empty segment, or misplaced brackets |
+| `DEPTH_EXCEEDED` | the path follows more references than `maxReferenceHops` allows |
+
+A misconfigured resolver is not a path failure: it stays an `IllegalArgumentException` from `require`, so your own bug
+and the user's mistake can be answered differently.
+
+### JSON fields behind references
+
+Once a path reaches a JSON column, the rest of it is the JSON path (see "Filtering by JSON/JSONB fields"):
+`orderId.payload.customer.city`. A quote in a JSON path segment is bound as a parameter, not spliced into the SQL, so
+it is data and `o'neil` is a valid key.
 
 ### Columns without a physical foreign key
 
@@ -491,6 +627,20 @@ or, worse, bind to the same table in the outer query and match the wrong rows.
 Unlike `referenceResolver`, this one is consulted for every nested path — including a reference
 Exposed resolves itself — because the reference is not what is being replaced. Returning `null` reads
 the target table's own column, leaving the emitted SQL unchanged.
+
+On a path with several hops the resolver is called once per hop, with that hop's table and one field name (never a
+dotted remainder). When the target table is aliased (see "Tables met twice on a path"), the table it receives is the
+`Alias`; a resolver that compares tables by identity returns `null` for it and the field is read from the alias. A
+projection at a middle hop must let the next hop continue: its `expression` is a reference column or a JSON column.
+
+Every projection is checked before any SQL is built, and a breach fails with `IllegalArgumentException`:
+
+- the tables its `source` exposes must not include one already in scope on the path (the root table, or a table of an
+  earlier hop), which would bind a reference to the wrong row;
+- its `expression` and `idExpression` may read only columns of tables its `source` exposes (an expression built over
+  the plain table while the source reads its alias fails).
+
+A CTE, subquery or temporary table at an aliased hop passes when it sets `idExpression`.
 
 ## Filtering trees (`IN_HIERARCHY`)
 
@@ -851,7 +1001,7 @@ Notes:
 - Nested `children` can be combined with `AND` or `OR` at each level. This supports many levels of nesting.
 - Single-child groups are normalized away; empty groups are ignored.
 - A NOT group with a single child is preserved (not flattened) and negates that child's conjunction.
-- This is independent from nested field paths for references, which remain limited to one level (see next section).
+- This is independent from nested field paths for references (see "Filtering by related entities").
 
 ## Supported operators
 
