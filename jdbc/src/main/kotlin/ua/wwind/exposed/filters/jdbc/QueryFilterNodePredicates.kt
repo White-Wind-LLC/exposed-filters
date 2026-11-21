@@ -64,10 +64,8 @@ internal fun predicateForField(
 }
 
 /**
- * Wraps [inner], a predicate on what [hop] reads, in the `EXISTS` subquery that correlates the hop's
- * source with the reference the enclosing scope holds. A hop naming one of several targets is also
- * required, outside the subquery, to find that target in its discriminator; a `NULL` discriminator
- * makes the predicate false rather than unknown, so the row matches under `NOT` like a missing link.
+ * Wraps [inner] in the hop's correlated `EXISTS`. A target's discriminator is checked outside it, with
+ * `IS NOT NULL` so that a `NULL` discriminator gives false, not unknown, and the row matches under `NOT`.
  */
 context(mappersModule: ColumnMappersModule?, options: FilterOptions)
 internal fun hopPredicate(hop: ResolvedHop, inner: Op<Boolean>, field: String): Op<Boolean> {

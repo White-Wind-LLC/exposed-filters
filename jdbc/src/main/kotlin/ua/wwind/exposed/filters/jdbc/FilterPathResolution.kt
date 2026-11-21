@@ -17,17 +17,9 @@ import java.util.Collections
 import java.util.IdentityHashMap
 
 /**
- * A filter field resolved against the source it filters: the root it starts at, every reference it
- * follows and the expression a predicate on it compares. A caller inspects it to check a path (read
- * access per table, allowed fields, depth) by the same rules filtering applies.
+ * A filter field resolved by the rules filtering applies, so a caller can check every hop of it.
  *
- * @property field The filter field as written.
- * @property rootName The key of the expression map the field starts at.
- * @property rootExpression The expression under [rootName].
- * @property hops The references the path follows, in order; empty for a root field and for a JSON
- * path on it.
- * @property expression The expression a predicate compares; for a JSON path, the JSON column it reads.
- * @property jsonPath The JSON path read below [expression]; empty unless the path reaches a JSON column.
+ * @property expression What a predicate compares; for a JSON path, the JSON column [jsonPath] is read from.
  */
 public class ResolvedFilterField internal constructor(
     public val field: String,
@@ -43,30 +35,11 @@ public class ResolvedFilterField internal constructor(
 }
 
 /**
- * One reference a filter path follows: where it leaves the previous scope, the table it enters and
- * the field it reads there.
+ * One reference a filter path follows.
  *
- * @property segment The segment that leaves the previous scope, as written, e.g. `documentId[RECEIPT]`.
- * @property referenceColumn The table column holding the reference, behind any alias clone.
- * @property referenceExpression The reference column as the enclosing scope reads it: the alias clone
- * when the column is read through an alias.
- * @property target The target named for a reference with several targets; `null` otherwise.
- * @property discriminator The column whose value selects [target], behind any alias clone; `null` when no
- * target is named.
- * @property reference The target's id column and table.
- * @property occurrence The target table as this hop reads it: the table itself, or an alias of it when
- * a table of that name is already in scope on the path.
- * @property field The field read in the target.
- * @property projection What [FilterOptions.nestedFieldResolver] reads in place of the target's own
- * column; `null` when the column is read.
- * @property source What this hop reads from: the projection's source, or [occurrence].
- * @property idExpression The expression in [source] the reference is compared with.
- * @property expression What this hop reads: the projection's expression, or the target's column as
- * [occurrence] exposes it.
- * @property tables The tables this hop reads, aliases unwrapped: the target table and every table of
- * the projection's source — joins flattened, and for a subquery the tables its query reads, every
- * statement of a set operation included. Tables read only by a scalar subquery inside the projection's
- * expression, or inside a subquery's conditions, are not listed.
+ * @property referenceExpression [referenceColumn] as the enclosing scope reads it, an alias clone included.
+ * @property occurrence The target table, or its `ef_<n>` alias when a table of that name is already in scope.
+ * @property tables Every table the hop's subquery reads, except those read only by a scalar subquery.
  */
 public class ResolvedHop internal constructor(
     public val segment: String,
@@ -90,10 +63,8 @@ public class ResolvedHop internal constructor(
             "expression=${expression.describe()}, tables=${tables.map { it.describe() }})"
 }
 
-/** A column as SQL names it (`ef_1.name`); any other expression as it prints itself. */
 private fun Expression<*>.describe(): String = if (this is Column<*>) "${table.qualifier()}.$name" else toString()
 
-/** A table by its name, an alias by its table's name and its own (`categories ef_1`), a subquery by its alias. */
 private fun ColumnSet.describe(): String = when (this) {
     is Alias<*> -> "${delegate.describe()} $alias"
     is Table -> tableName
@@ -102,12 +73,10 @@ private fun ColumnSet.describe(): String = when (this) {
 }
 
 /**
- * Resolves [field] against the fields of this [ColumnSet] exactly as [applyFiltersOn] looks them up,
- * without building SQL or reading rows. The resolvers of [options] run as they do when filtering.
+ * Resolves [field] as [applyFiltersOn] does, without building SQL.
  *
  * @throws FilterPathException when the path cannot be resolved.
- * @throws IllegalArgumentException when [field] starts at a name several sources carry, or a
- * resolver of [options] is misconfigured.
+ * @throws IllegalArgumentException when the root name is ambiguous or a resolver is misconfigured.
  */
 public fun ColumnSet.resolveFilterField(
     field: String,
@@ -118,22 +87,16 @@ public fun ColumnSet.resolveFilterField(
 }
 
 /**
- * Resolves [field] against this expression map exactly as [applyFilters] looks it up, without
- * building SQL or reading rows. The resolvers of [options] run as they do when filtering.
+ * Resolves [field] as [applyFilters] does, without building SQL.
  *
  * @throws FilterPathException when the path cannot be resolved.
- * @throws IllegalArgumentException when a resolver of [options] is misconfigured.
+ * @throws IllegalArgumentException when a resolver is misconfigured.
  */
 public fun Map<String, ExpressionWithColumnType<*>>.resolveFilterField(
     field: String,
     options: FilterOptions = DefaultFilterOptions,
 ): ResolvedFilterField = context(options) { resolveField(this, field) }
 
-/**
- * Walks [field] from its root through every reference it names. Each segment that leads further is
- * checked in order — a JSON column ends the walk, otherwise a column, the depth limit and its
- * reference — before the next segment is read in the reference's target.
- */
 context(options: FilterOptions)
 internal fun resolveField(
     expressions: Map<String, ExpressionWithColumnType<*>>,
@@ -184,18 +147,12 @@ internal fun resolveField(
     return ResolvedFilterField(field, split.baseName, rootExpression, hops, current, emptyList())
 }
 
-/** A reference a hop follows and, when its segment names one of several targets, the column selecting it. */
 private class FollowedReference(val reference: ReferenceInfo, val discriminator: Column<*>?)
 
-/**
- * The table and id column the reference [from] holds points at, segment [at] leading through it. A
- * segment naming a target is followed only through [FilterOptions.polymorphicReferenceResolver]; one
- * naming none through Exposed's `referee`, then [FilterOptions.referenceResolver].
- */
+/** A segment naming a target follows only the polymorphic resolver; one naming none, `referee` first. */
 context(options: FilterOptions)
 private fun followReference(field: String, position: Int, at: PathSegment, from: Column<*>): FollowedReference {
-    // An alias or subquery column is a clone without `referee`: the reference is resolved on the
-    // column it was made from.
+    // An alias or subquery column is a clone without `referee`.
     val original = from.originalColumn()
     val target = at.target
     if (target == null) {
@@ -233,7 +190,6 @@ private fun followReference(field: String, position: Int, at: PathSegment, from:
     return FollowedReference(reference, discriminator)
 }
 
-/** Refuses a resolver whose discriminator is not a column of the table holding [reference]. */
 private fun requireDiscriminatorBeside(
     field: String,
     at: PathSegment,
@@ -248,19 +204,11 @@ private fun requireDiscriminatorBeside(
     }
 }
 
-/**
- * [discriminator] as the scope holding this reference column reads it: the column of this column's
- * table made from it — an alias's or a subquery's clone, through nested aliases — or [discriminator]
- * itself when this column is read from a table, not an alias. `null` when this column is read through
- * an alias that carries no such column.
- */
+/** [discriminator] as this column's scope reads it, through nested aliases; `null` when an alias lacks it. */
 internal fun Column<*>.scopedDiscriminator(discriminator: Column<*>): Column<*>? =
     table.columns.firstOrNull { it.originalColumn() == discriminator } ?: discriminator.takeIf { table !is Alias<*> }
 
-/**
- * Enters the target of [followed] and reads the segment [next] there. The target is aliased
- * `ef_<hopNumber>` when a table of its name is already in [scope], so it never shadows that one.
- */
+/** The target is aliased `ef_<hopNumber>` when a table of its name is already in [scope]. */
 context(options: FilterOptions)
 private fun enterTarget(
     field: String,
@@ -286,8 +234,7 @@ private fun enterTarget(
         ?: (target.fieldMap()[next.name] as? Column<*>)?.let { alias?.get(it) ?: it }
         ?: throw pathFailure(field, position + 1, next, Reason.UNKNOWN_FIELD, "is not a field of ${target.tableName}")
 
-    // The id the reference is compared against must come from the hop's own source: a projection that
-    // renames or replaces the target table has to say where the id went.
+    // A projection that renames or replaces the target must say where its id is.
     val idExpression = projection?.idExpression ?: reference.referencedIdColumn.let { alias?.get(it) ?: it }.also {
         require(projection == null || it in projection.source.columns) {
             "Nested field $field: the projection's source does not expose ${it.table.tableName}.${it.name}; " +
@@ -314,11 +261,7 @@ private fun enterTarget(
     )
 }
 
-/**
- * Refuses a projection that would bind a reference to the wrong scope: a source that makes visible a
- * name already in [outside], or an expression reading a column of a table the source does not make
- * visible. Both render SQL that compares against another row, so the resolver is the one at fault.
- */
+/** Refuses a projection whose source or expressions would bind to a scope other than its own. */
 private fun checkProjectionScope(
     field: String,
     at: PathSegment,
@@ -344,10 +287,8 @@ private fun checkProjectionScope(
 }
 
 /**
- * The columns this expression reads, found by walking its [Expression], [Iterable], [Array] and [Pair]
- * fields as [expressionKind] does. A [Column] is collected and not entered; an alias-only reference
- * reads an already computed value and an [AbstractQuery] (a query or a union, both iterable) is a scope of its own, so
- * neither is entered.
+ * The columns this expression reads. Neither an alias-only reference nor an [AbstractQuery] is entered:
+ * both read another scope, and iterating a query would run it.
  */
 internal fun Expression<*>.referencedColumns(): Set<Column<*>> =
     LinkedHashSet<Column<*>>().also { collectColumns(this, it, Collections.newSetFromMap(IdentityHashMap())) }
@@ -382,21 +323,14 @@ private fun pathFailure(
     message = "Filter field '$field': segment '${segment.raw}' at position $position $problem",
 )
 
-/**
- * The name SQL refers to this table by within a query: an alias's name, or the table name without its
- * schema — an unaliased `FROM archive.orders` is `orders` to the conditions of that query, and hides an
- * outer `orders` from them.
- */
+/** The name a query's conditions see: an unaliased `FROM archive.orders` is `orders` and hides an outer one. */
 internal fun Table.scopeName(): String =
     (this as? Alias<*>)?.alias ?: if (schemaName == null) tableName else tableName.substringAfterLast('.')
 
-/** The qualifier a column of this table is rendered with: an alias's name, or the table name with its schema. */
+/** The qualifier a column of this table is rendered with, schema included. */
 internal fun Table.qualifier(): String = (this as? Alias<*>)?.alias ?: tableName
 
-/**
- * The names this source makes visible to the conditions of a query reading it: a table's or an
- * alias's [name], a subquery's alias, and those of every part of a join.
- */
+/** The names this source makes visible to a query's conditions. */
 internal fun ColumnSet.scopeNames(name: (Table) -> String = { it.scopeName() }): Set<String> = when (this) {
     is Table -> setOf(name(this))
     is QueryAlias -> setOf(alias)
@@ -407,11 +341,7 @@ internal fun ColumnSet.scopeNames(name: (Table) -> String = { it.scopeName() }):
 private fun ColumnSet.columnTableNames(name: (Table) -> String): Set<String> =
     columns.mapTo(LinkedHashSet()) { name(it.table) }
 
-/**
- * The tables a query reading this source reads, aliases unwrapped: a table itself, the parts of a
- * join, and the tables a subquery reads. Tables read only by a scalar subquery inside an expression
- * or a condition are not among them.
- */
+/** The tables a query over this source reads, aliases unwrapped; scalar subqueries are not followed. */
 internal fun ColumnSet.readTables(): List<Table> = when (this) {
     is Alias<*> -> delegate.readTables()
     is Table -> listOf(this)
@@ -420,10 +350,7 @@ internal fun ColumnSet.readTables(): List<Table> = when (this) {
     else -> columnTables()
 }.distinct()
 
-/**
- * The tables this query reads from: every statement of a set operation — whose own source is only its
- * first statement's — and otherwise its source's tables.
- */
+/** A set operation's own source is its first statement's only, so both statements are read. */
 internal fun AbstractQuery<*>.readTables(): List<Table> = when (this) {
     is SetOperation -> (firstStatement.readTables() + secondStatement.readTables()).distinct()
     else -> set.source.readTables()

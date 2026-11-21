@@ -1,18 +1,9 @@
 package ua.wwind.exposed.filters.jdbc
 
-/**
- * One segment of a filter path below its root: a field [name], optionally followed by the [target] a
- * reference with several targets is followed into, as in `documentId[RECEIPT]`.
- *
- * @property raw The segment as written.
- */
+/** A path segment, e.g. `documentId[RECEIPT]`: [raw] as written, its field [name] and optional [target]. */
 internal data class PathSegment(val raw: String, val name: String, val target: String?)
 
-/**
- * Parses the segment [raw] at position [index] of [field]. The name is non-empty and carries no
- * bracket; a target, when given, is non-empty and carries no dot or bracket. Anything else fails
- * with [FilterPathException.Reason.INVALID_SEGMENT].
- */
+/** A name has no bracket; a target is non-empty, without a dot or bracket. */
 internal fun parsePathSegment(field: String, index: Int, raw: String): PathSegment {
     val open = raw.indexOf('[')
     if (open < 0) {
@@ -36,20 +27,12 @@ private fun invalidSegment(field: String, index: Int, raw: String): FilterPathEx
 
 private fun String.isValidTarget(): Boolean = isNotEmpty() && none { it == '.' || it == '[' || it == ']' }
 
-/**
- * A filter field split into the [baseName] it is looked up by, the [rootSegment] that names it as
- * written, the [rootTarget] that segment names after the key (`null` when it names none) and the dot
- * [path] below it; `null` when nothing follows the root.
- */
+/** A field split into its key [baseName], the [rootSegment] naming it as written, its [rootTarget] and the rest. */
 internal data class FieldPath(val baseName: String, val rootSegment: String, val rootTarget: String?, val path: String?)
 
 /**
- * Splits [field] at the longest dot-delimited prefix that names a key [isKey] accepts, so a map can
- * expose namespaced keys such as `product.category` while `product.attributes.color` still reads a
- * JSON path below the key `product.attributes`. A prefix names a key either literally or, when it ends
- * in a well-formed `[target]`, without that target; the literal key wins. When no prefix names a key,
- * the root is the first segment: that is what an unknown-field error names, and what every map
- * without dotted keys resolved to before.
+ * Splits [field] at the longest dot-delimited prefix that is a key, literally or without a trailing
+ * `[target]` (the literal key wins); with no such prefix the root is the first segment.
  */
 internal fun splitField(field: String, isKey: (String) -> Boolean): FieldPath {
     val ends = buildList {
@@ -73,7 +56,6 @@ internal fun splitField(field: String, isKey: (String) -> Boolean): FieldPath {
 
 private fun String.pathAfter(end: Int): String? = if (end == length) null else substring(end + 1)
 
-/** This prefix split into its name and the well-formed `[target]` it ends in; `null` when it ends in none. */
 private fun String.splitTarget(): Pair<String, String>? {
     if (!endsWith(']')) return null
     val open = lastIndexOf('[')
@@ -82,11 +64,7 @@ private fun String.splitTarget(): Pair<String, String>? {
     return if (target.isValidTarget()) substring(0, open) to target else null
 }
 
-/**
- * The JSON path [segments] of [field], the first of them at position [firstIndex]. They are taken
- * verbatim, brackets included; only an empty one fails, with
- * [FilterPathException.Reason.INVALID_SEGMENT].
- */
+/** JSON segments are taken verbatim, brackets included; only an empty one fails. */
 internal fun parseJsonPath(field: String, firstIndex: Int, segments: List<String>): List<String> {
     segments.forEachIndexed { offset, segment ->
         if (segment.isEmpty()) throw invalidSegment(field, firstIndex + offset, segment)

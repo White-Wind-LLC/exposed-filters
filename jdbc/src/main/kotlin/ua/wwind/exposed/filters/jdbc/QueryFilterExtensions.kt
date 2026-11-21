@@ -88,11 +88,8 @@ public fun Query.applyFiltersOn(
  *
  * Supports both [Column] and [ExpressionWithColumnType] (e.g., `coalesce()`, `concat()`, aliased columns).
  *
- * A dotted field (`orderId.customerId.name`) starts at the longest dot-delimited prefix that is a key of
- * [expressions] and follows a reference per segment — Exposed's own, or one [FilterOptions.referenceResolver]
- * or [FilterOptions.polymorphicReferenceResolver] gives for a column — up to [FilterOptions.maxReferenceHops],
- * each as a nested `EXISTS`. Below a JSON column the rest of the field is a JSON path. A computed expression
- * has no reference to follow. [resolveFilterField] returns the resolved path without building a query.
+ * A dotted field (`orderId.customerId.name`) follows one reference per segment as a nested `EXISTS`, up to
+ * [FilterOptions.maxReferenceHops]; below a JSON column the rest is a JSON path.
  *
  * A predicate on an aggregate expression (e.g. `qty.sum()`, also inside another expression, or any field
  * listed in [FilterOptions.aggregateFields]) is added to `HAVING`, every other predicate to `WHERE`.

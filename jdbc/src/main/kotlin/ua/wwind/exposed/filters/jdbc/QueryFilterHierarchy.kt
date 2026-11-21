@@ -47,12 +47,10 @@ internal fun hierarchyPredicate(
 }
 
 /**
- * The tree an `IN_HIERARCHY` filter on [column] compares against, for a consumer that must check a value
- * against exactly that tree. The column is resolved as the filter resolves it, through [options]; a column
- * of a table alias or subquery is resolved on the column it projects.
+ * The tree an `IN_HIERARCHY` filter on this column compares against, resolved as the filter resolves it.
  *
- * @throws IllegalStateException when no tree, or more than one, can be derived for [column].
- * @throws IllegalArgumentException when the resolved parent column is not on the tree's table.
+ * @throws IllegalStateException when no tree, or more than one, can be derived.
+ * @throws IllegalArgumentException when the parent column is not on the tree's table.
  */
 public fun Column<*>.filterHierarchy(options: FilterOptions = DefaultFilterOptions): HierarchyInfo =
     context(options) { resolveCheckedHierarchy(originalColumn(), name) }

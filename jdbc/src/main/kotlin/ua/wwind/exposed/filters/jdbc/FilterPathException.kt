@@ -1,15 +1,10 @@
 package ua.wwind.exposed.filters.jdbc
 
 /**
- * A filter field whose path cannot be resolved against the filtered source. It is the caller's input
- * that is wrong, so the type is an [IllegalArgumentException]; a misconfigured resolver is reported
- * as a plain [IllegalArgumentException] instead, so the two can be answered differently.
+ * A filter path that cannot be resolved: the caller's input is wrong. A misconfigured resolver is a plain
+ * [IllegalArgumentException] instead, so the two can be answered differently.
  *
- * @property field The filter field as written.
- * @property segmentIndex Position of the failed segment in the path; `0` is the root, the key the
- * field is looked up by, even when that key contains dots.
- * @property segment The failed segment as written, including a `[target]` it names.
- * @property reason Why the path cannot be resolved.
+ * @property segmentIndex Position of the failed segment; `0` is the root key, even when it contains dots.
  */
 public class FilterPathException(
     public val field: String,
@@ -21,31 +16,29 @@ public class FilterPathException(
 
     /** Why a filter path cannot be resolved. */
     public enum class Reason {
-        /** The root is not a field of the source, or a segment is not a field of the table it reaches. */
         UNKNOWN_FIELD,
 
-        /** A path continues below a computed expression, which has no reference to follow. */
+        /** The path continues below a computed expression. */
         NOT_A_COLUMN,
 
-        /** A path continues below a column that neither references a table nor holds JSON. */
+        /** The path continues below a column that neither references a table nor holds JSON. */
         NOT_A_REFERENCE,
 
-        /** A path continues through a reference with several targets without naming one. */
+        /** A reference with several targets is followed without naming one. */
         TARGET_REQUIRED,
 
-        /** A segment names a target where the column it reaches has no choice of targets. */
+        /** A target is named on a column without a choice of targets. */
         TARGET_NOT_SUPPORTED,
 
-        /** A segment names a target the reference does not know. */
         UNKNOWN_TARGET,
 
-        /** A path ends at a segment that names a target, with no field of that target to read. */
+        /** The path ends at a target, with no field of it. */
         TARGET_WITHOUT_FIELD,
 
-        /** A segment is not well formed: empty, or with misplaced brackets. */
+        /** An empty segment, or misplaced brackets. */
         INVALID_SEGMENT,
 
-        /** A path follows more references than the configured limit allows. */
+        /** More references than [FilterOptions.maxReferenceHops] allows. */
         DEPTH_EXCEEDED,
     }
 }

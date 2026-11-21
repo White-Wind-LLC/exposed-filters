@@ -25,17 +25,9 @@ public data class NestedFieldProjection(
 )
 
 /**
- * Describes a reference whose target table is chosen by another column of the same row, e.g. a
- * document id stored beside the document's kind. A filter path names the target it follows, as in
- * `documentId[RECEIPT].number`.
- *
- * @property discriminator The column whose value selects the target. It must be a column of the same
- * table as the reference column, and readable wherever the reference column is read: it is read
- * through the same alias or subquery, so a subquery the filtered fields come from, or a
- * [NestedFieldProjection.source] whose expression the path follows, must select it too.
- * @property targets Each target the reference may point into, keyed by the discriminator value as a
- * filter path writes it: the key is converted like an `EQ` value on [discriminator] (an enum constant
- * by its name) and compared case-sensitively.
+ * A reference whose target table [discriminator] selects; [targets] are keyed by the discriminator value a
+ * path writes (`documentId[RECEIPT]`). [discriminator] is a column of the reference's table, and a subquery
+ * the reference is read through must select it too.
  */
 public data class PolymorphicReferenceInfo(
     public val discriminator: Column<*>,
@@ -64,21 +56,9 @@ public data class PolymorphicReferenceInfo(
  * physical FK but the logical one is recorded elsewhere (an annotation, a registry). For a column of
  * a table alias or a subquery it receives the original table column behind the clone, never the clone.
  * `IN_HIERARCHY` auto-detection consults it the same way to find the tree a column points into.
- * @property nestedFieldResolver Replaces what a hop of a filter path reads, given the table the hop
- * enters and the one field it reads there. It is called once per hop, never with a dotted remainder:
- * `orderId.customerId.name` asks for `customerId` of the orders table, then for `name` of the customers
- * table. When a table of the target's name is already in scope on the path, the table passed in is an
- * `Alias` of the target (`ef_<n>`): key on `(table as? Alias<*>)?.delegate ?: table`, and build the
- * projection over the table passed in, since an expression over the plain table would read another
- * row. Unlike [referenceResolver] it is consulted for every hop, including one Exposed resolves itself,
- * because the reference is not what needs replacing — the column behind it is. Return `null` to read
- * the target table's own column (through the alias when there is one), which is the default and keeps
- * the emitted SQL unchanged. A projection at a middle hop must let the next hop continue: its
- * expression is a column with a reference to follow, or JSON. Every projection is checked before any
- * SQL is built and a breach fails with [IllegalArgumentException]: the names its source makes visible
- * must not include one already in scope on the path, and its expression and id expression may read
- * only columns of tables its source makes visible. Useful when the readable value lives beside the
- * target table rather than in it, as a translation does.
+ * @property nestedFieldResolver Replaces what one hop reads, given the table it enters and the one field it
+ * reads there. A table met again on the path arrives as its `ef_<n>` alias, and the projection must read that
+ * alias; one that would bind to another scope fails with [IllegalArgumentException].
  * @property aggregateFields Field names whose expressions are aggregates the library cannot recognize
  * on its own, e.g. a `CustomFunction("array_agg", ...)`. Predicates on these fields go to `HAVING`
  * instead of `WHERE`. Exposed's built-in aggregates (`sum()`, `count()`, `min()`, `max()`, `avg()`,
@@ -99,21 +79,10 @@ public data class PolymorphicReferenceInfo(
  * text; the other types parse every value before any SQL is built and throw [IllegalArgumentException]
  * naming the field when one does not parse. Stored text that does not fit a declared non-string type
  * still fails the cast in the database.
- * @property polymorphicReferenceResolver Describes a reference column whose target table depends on
- * another column of the row, as a [PolymorphicReferenceInfo] of that discriminator and the targets by
- * its value. A filter path then names the target it follows (`documentId[RECEIPT].number`) and matches
- * only rows whose discriminator holds that target, compared case-sensitively. A segment that names a
- * target is followed through this resolver alone, so a target on a column it does not describe fails
- * with [FilterPathException.Reason.TARGET_NOT_SUPPORTED]. A segment without a target through a column
- * it describes, which neither Exposed nor [referenceResolver] resolves, fails with
- * [FilterPathException.Reason.TARGET_REQUIRED]. For a column of a table alias or a subquery it receives
- * the original table column behind the clone, never the clone; the discriminator is then read through
- * that alias or subquery, which must select it. Such a hop counts as one towards [maxReferenceHops].
- * @property maxReferenceHops The most references a filter path may follow, e.g. `1` allows
- * `orderId.number` and refuses `orderId.customerId.name`; segments of a JSON path do not count. `null`
- * means no limit. A path past the limit fails with [FilterPathException.Reason.DEPTH_EXCEEDED], so a
- * caller whose checks cover a fixed depth opts into deeper paths only by raising it. Must not be
- * negative.
+ * @property polymorphicReferenceResolver Describes a reference whose target table another column selects, so
+ * a path can name the target: `documentId[RECEIPT].number`. Receives the column behind an alias clone.
+ * @property maxReferenceHops How many references a path may follow (`null`: no limit; JSON segments do not
+ * count). One by default, so deeper paths stay refused until the caller raises it.
  */
 public data class FilterOptions(
     public val caseSensitiveStrings: Boolean = false,
