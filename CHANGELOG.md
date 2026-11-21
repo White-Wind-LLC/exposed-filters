@@ -4,11 +4,14 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.16.0] - 2026-11-21
+
 - Dependencies: Exposed 1.5.0 → 1.6.0.
 - JDBC: filter paths follow any number of references, `orderId.customerId.regionId.name`, and may end in a JSON path
   behind them ([#37](https://github.com/White-Wind-LLC/exposed-filters/issues/37)). Each hop is one nested `EXISTS`;
-  SQL of paths that resolved before is unchanged, except the self-reference and the same-named table in another schema below. A quote in a JSON path
-  segment is bound as a parameter (Exposed 1.6.0), not refused, and a test pins it.
+  SQL of paths that resolved before is unchanged, except the self-reference and the same-named table in another
+  schema below. A quote in a JSON path segment is bound as a parameter (Exposed 1.6.0), not refused, and a test pins
+  it.
 - JDBC: new `FilterOptions.maxReferenceHops` (default `1`, `null` for no limit; a negative value fails) limits the
   references a path follows. **Behavior change**: a path of two or more hops is refused with `DEPTH_EXCEEDED` until the
   limit is raised; it failed with "Unknown nested field" before.
@@ -35,6 +38,8 @@ All notable changes to this project will be documented in this file.
   remainder, and receives an `Alias` of the target table when the hop is aliased; a resolver that keys by table identity
   returns `null` for it and the field is read from the alias.
 - **Not binary-compatible** with 1.15.x: `FilterOptions` changed constructor arity, recompile.
+
+**Full Changelog**: https://github.com/White-Wind-LLC/exposed-filters/compare/v1.15.0...v1.16.0
 
 ## [1.15.0] - 2026-10-15
 
