@@ -30,7 +30,9 @@ public data class NestedFieldProjection(
  * `documentId[RECEIPT].number`.
  *
  * @property discriminator The column whose value selects the target. It must be a column of the same
- * table as the reference column.
+ * table as the reference column, and readable wherever the reference column is read: it is read
+ * through the same alias or subquery, so a subquery the filtered fields come from, or a
+ * [NestedFieldProjection.source] whose expression the path follows, must select it too.
  * @property targets Each target the reference may point into, keyed by the discriminator value as a
  * filter path writes it: the key is converted like an `EQ` value on [discriminator] (an enum constant
  * by its name) and compared case-sensitively.
@@ -96,8 +98,8 @@ public data class PolymorphicReferenceInfo(
  * with [FilterPathException.Reason.TARGET_NOT_SUPPORTED]. A segment without a target through a column
  * it describes, which neither Exposed nor [referenceResolver] resolves, fails with
  * [FilterPathException.Reason.TARGET_REQUIRED]. For a column of a table alias or a subquery it receives
- * the original table column behind the clone, never the clone. Such a hop counts as one towards
- * [maxReferenceHops].
+ * the original table column behind the clone, never the clone; the discriminator is then read through
+ * that alias or subquery, which must select it. Such a hop counts as one towards [maxReferenceHops].
  * @property maxReferenceHops The most references a filter path may follow, e.g. `1` allows
  * `orderId.number` and refuses `orderId.customerId.name`; segments of a JSON path do not count. `null`
  * means no limit. A path past the limit fails with [FilterPathException.Reason.DEPTH_EXCEEDED], so a
