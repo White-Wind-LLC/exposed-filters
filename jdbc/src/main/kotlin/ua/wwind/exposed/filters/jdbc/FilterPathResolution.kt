@@ -46,7 +46,8 @@ public data class ResolvedFilterField(
  * @property referenceExpression The reference column as the enclosing scope reads it: the alias clone
  * when the column is read through an alias.
  * @property target The target named for a reference with several targets; `null` otherwise.
- * @property discriminator The column whose value selects [target]; `null` when no target is named.
+ * @property discriminator The column whose value selects [target], behind any alias clone; `null` when no
+ * target is named.
  * @property reference The target's id column and table.
  * @property occurrence The target table as this hop reads it: the table itself, or an alias of it when
  * a table of that name is already in scope on the path.
@@ -145,9 +146,9 @@ internal fun resolveField(
             val problem = "would follow reference $hopNumber, past FilterOptions.maxReferenceHops ($maxHops)"
             throw pathFailure(field, position, at, Reason.DEPTH_EXCEEDED, problem)
         }
-        val reference = followReference(field, position, at, from)
+        val followed = followReference(field, position, at, from)
         val next = parsePathSegment(field, position + 1, raw)
-        val hop = enterTarget(field, position, at, from, reference, next, hopNumber, scope)
+        val hop = enterTarget(field, position, at, from, followed, next, hopNumber, scope)
         hops += hop
         scope += hop.source.scopeNames()
         current = hop.expression
@@ -159,22 +160,54 @@ internal fun resolveField(
     return ResolvedFilterField(field, split.baseName, rootExpression, hops, current, emptyList())
 }
 
-/** The table and id column the reference [from] holds points at, segment [at] leading through it. */
+/** A reference a hop follows and, when its segment names one of several targets, the column selecting it. */
+private class FollowedReference(val reference: ReferenceInfo, val discriminator: Column<*>?)
+
+/**
+ * The table and id column the reference [from] holds points at, segment [at] leading through it. A
+ * segment naming a target is followed only through [FilterOptions.polymorphicReferenceResolver]; one
+ * naming none through Exposed's `referee`, then [FilterOptions.referenceResolver].
+ */
 context(options: FilterOptions)
-private fun followReference(field: String, position: Int, at: PathSegment, from: Column<*>): ReferenceInfo {
-    if (at.target != null) {
-        throw pathFailure(field, position, at, Reason.TARGET_NOT_SUPPORTED, "names a target of a plain reference")
-    }
+private fun followReference(field: String, position: Int, at: PathSegment, from: Column<*>): FollowedReference {
     // An alias or subquery column is a clone without `referee`: the reference is resolved on the
     // column it was made from.
     val original = from.originalColumn()
-    return resolveReference(original)
-        ?: options.referenceResolver?.invoke(original)
-        ?: throw pathFailure(field, position, at, Reason.NOT_A_REFERENCE, "is not a reference to follow")
+    val target = at.target
+    if (target == null) {
+        val reference = resolveReference(original) ?: options.referenceResolver?.invoke(original)
+        if (reference != null) return FollowedReference(reference, discriminator = null)
+        val polymorphic = options.polymorphicReferenceResolver?.invoke(original)
+        if (polymorphic != null) {
+            val problem = "has several targets; name one of ${polymorphic.targets.keys.joinToString()}"
+            throw pathFailure(field, position, at, Reason.TARGET_REQUIRED, problem)
+        }
+        throw pathFailure(field, position, at, Reason.NOT_A_REFERENCE, "is not a reference to follow")
+    }
+    val polymorphic = options.polymorphicReferenceResolver?.invoke(original) ?: throw pathFailure(
+        field = field,
+        position = position,
+        segment = at,
+        reason = Reason.TARGET_NOT_SUPPORTED,
+        problem = "names a target, but its column has no choice of targets",
+    )
+    require(polymorphic.discriminator.table == original.table) {
+        "Filter field '$field': the discriminator of the reference at segment '${at.raw}' is " +
+            "${polymorphic.discriminator.table.tableName}.${polymorphic.discriminator.name}, " +
+            "which is not a column of ${original.table.tableName}"
+    }
+    val reference = polymorphic.targets[target] ?: throw pathFailure(
+        field = field,
+        position = position,
+        segment = at,
+        reason = Reason.UNKNOWN_TARGET,
+        problem = "names a target its reference does not know; known: ${polymorphic.targets.keys.joinToString()}",
+    )
+    return FollowedReference(reference, polymorphic.discriminator)
 }
 
 /**
- * Enters the target of [reference] and reads the segment [next] there. The target is aliased
+ * Enters the target of [followed] and reads the segment [next] there. The target is aliased
  * `ef_<hopNumber>` when a table of its name is already in [scope], so it never shadows that one.
  */
 context(options: FilterOptions)
@@ -183,11 +216,12 @@ private fun enterTarget(
     position: Int,
     at: PathSegment,
     from: Column<*>,
-    reference: ReferenceInfo,
+    followed: FollowedReference,
     next: PathSegment,
     hopNumber: Int,
     scope: Set<String>,
 ): ResolvedHop {
+    val reference = followed.reference
     val target = reference.referencedTable
     require(reference.referencedIdColumn.table == target) {
         "Filter field '$field': the reference at segment '${at.raw}' resolves to " +
@@ -216,8 +250,8 @@ private fun enterTarget(
         segment = at.raw,
         referenceColumn = from.originalColumn(),
         referenceExpression = from,
-        target = null,
-        discriminator = null,
+        target = at.target,
+        discriminator = followed.discriminator,
         reference = reference,
         occurrence = occurrence,
         field = next.name,

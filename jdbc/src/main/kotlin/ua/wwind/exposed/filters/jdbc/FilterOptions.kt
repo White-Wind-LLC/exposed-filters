@@ -25,6 +25,22 @@ public data class NestedFieldProjection(
 )
 
 /**
+ * Describes a reference whose target table is chosen by another column of the same row, e.g. a
+ * document id stored beside the document's kind. A filter path names the target it follows, as in
+ * `documentId[RECEIPT].number`.
+ *
+ * @property discriminator The column whose value selects the target. It must be a column of the same
+ * table as the reference column.
+ * @property targets Each target the reference may point into, keyed by the discriminator value as a
+ * filter path writes it: the key is converted like an `EQ` value on [discriminator] (an enum constant
+ * by its name) and compared case-sensitively.
+ */
+public data class PolymorphicReferenceInfo(
+    public val discriminator: Column<*>,
+    public val targets: Map<String, ReferenceInfo>,
+)
+
+/**
  * Global options that tune how filter predicates are built.
  *
  * @property caseSensitiveStrings When `false` (default), predicates on `VarChar`/`Text` columns
@@ -72,6 +88,16 @@ public data class NestedFieldProjection(
  * text; the other types parse every value before any SQL is built and throw [IllegalArgumentException]
  * naming the field when one does not parse. Stored text that does not fit a declared non-string type
  * still fails the cast in the database.
+ * @property polymorphicReferenceResolver Describes a reference column whose target table depends on
+ * another column of the row, as a [PolymorphicReferenceInfo] of that discriminator and the targets by
+ * its value. A filter path then names the target it follows (`documentId[RECEIPT].number`) and matches
+ * only rows whose discriminator holds that target, compared case-sensitively. A segment that names a
+ * target is followed through this resolver alone, so a target on a column it does not describe fails
+ * with [FilterPathException.Reason.TARGET_NOT_SUPPORTED]. A segment without a target through a column
+ * it describes, which neither Exposed nor [referenceResolver] resolves, fails with
+ * [FilterPathException.Reason.TARGET_REQUIRED]. For a column of a table alias or a subquery it receives
+ * the original table column behind the clone, never the clone. Such a hop counts as one towards
+ * [maxReferenceHops].
  * @property maxReferenceHops The most references a filter path may follow, e.g. `1` allows
  * `orderId.number` and refuses `orderId.customerId.name`; segments of a JSON path do not count. `null`
  * means no limit. A path past the limit fails with [FilterPathException.Reason.DEPTH_EXCEEDED], so a
@@ -86,6 +112,7 @@ public data class FilterOptions(
     public val aggregateFields: Set<String> = emptySet(),
     public val hierarchyResolver: ((Column<*>) -> HierarchyInfo?)? = null,
     public val jsonPathType: ((field: String) -> JsonValueType?)? = null,
+    public val polymorphicReferenceResolver: ((Column<*>) -> PolymorphicReferenceInfo?)? = null,
     public val maxReferenceHops: Int? = 1,
 ) {
     init {

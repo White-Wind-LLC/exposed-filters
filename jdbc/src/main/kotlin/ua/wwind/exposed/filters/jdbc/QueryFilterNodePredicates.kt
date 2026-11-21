@@ -64,16 +64,24 @@ internal fun predicateForField(
 
 /**
  * Wraps [inner], a predicate on what [hop] reads, in the `EXISTS` subquery that correlates the hop's
- * source with the reference the enclosing scope holds.
+ * source with the reference the enclosing scope holds. A hop naming one of several targets is also
+ * required, outside the subquery, to find that target in its discriminator.
  */
 context(mappersModule: ColumnMappersModule?, options: FilterOptions)
-internal fun hopPredicate(hop: ResolvedHop, inner: Op<Boolean>, field: String): Op<Boolean> =
-    exists(
+internal fun hopPredicate(hop: ResolvedHop, inner: Op<Boolean>, field: String): Op<Boolean> {
+    val correlated = exists(
         hop.source.selectAll().andWhere {
             @Suppress("UNCHECKED_CAST")
             (hop.idExpression as ExpressionWithColumnType<Any?>).eq(hop.referenceExpression as Column<Any?>) and inner
         },
     )
+    val target = hop.target ?: return correlated
+    val discriminator = checkNotNull(hop.discriminator) { "A hop naming target '$target' carries no discriminator" }
+    // Read from the occurrence the reference is read from; a target is a tag, so case always matters.
+    val scoped = (hop.referenceExpression.table as? Alias<*>)?.get(discriminator) ?: discriminator
+    val chosen = context(options.copy(caseSensitiveStrings = true)) { eqValue(scoped, target, field) }
+    return chosen and correlated
+}
 
 /**
  * Describes the table a reference column points at, so a nested field path can be turned into an

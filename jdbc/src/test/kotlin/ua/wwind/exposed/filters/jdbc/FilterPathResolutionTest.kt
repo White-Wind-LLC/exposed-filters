@@ -391,6 +391,72 @@ class FilterPathResolutionTest {
         }
     }
 
+    // ----- A reference with several targets -----
+
+    private val polymorphic = FilterOptions(polymorphicReferenceResolver = rpDocumentReferences)
+
+    @Test
+    fun `a named target resolves into its table`() {
+        val resolved = RpContainers.resolveFilterField("documentId[RECEIPT].number", polymorphic)
+
+        val hop = resolved.hops.single()
+        assertEquals("RECEIPT", hop.target)
+        assertEquals(RpContainers.documentType, hop.discriminator)
+        assertSame(RpReceipts, hop.reference.referencedTable)
+        assertEquals("documentId[RECEIPT]", hop.segment)
+        assertEquals(RpReceipts.number, resolved.expression)
+    }
+
+    @Test
+    fun `a reference with several targets needs a target`() {
+        assertPathFailure(Reason.TARGET_REQUIRED, 0, "documentId") {
+            RpContainers.resolveFilterField("documentId.number", polymorphic)
+        }
+    }
+
+    @Test
+    fun `a target the reference does not know fails`() {
+        assertPathFailure(Reason.UNKNOWN_TARGET, 0, "documentId[ORDER]") {
+            RpContainers.resolveFilterField("documentId[ORDER].number", polymorphic)
+        }
+    }
+
+    @Test
+    fun `a target on a column the polymorphic resolver does not describe fails`() {
+        assertPathFailure(Reason.TARGET_NOT_SUPPORTED, 0, "code[X]") {
+            RpContainers.resolveFilterField("code[X].y", polymorphic)
+        }
+    }
+
+    @Test
+    fun `a path ending at a known target fails`() {
+        assertPathFailure(Reason.TARGET_WITHOUT_FIELD, 0, "documentId[RECEIPT]") {
+            RpContainers.resolveFilterField("documentId[RECEIPT]", polymorphic)
+        }
+    }
+
+    @Test
+    fun `a discriminator on another table is a misconfiguration, not a path failure`() {
+        val misconfigured = FilterOptions(
+            polymorphicReferenceResolver = { column ->
+                if (column == RpContainers.documentId) {
+                    PolymorphicReferenceInfo(
+                        discriminator = RpMoves.containerId,
+                        targets = mapOf("RECEIPT" to ReferenceInfo(RpReceipts.id, RpReceipts)),
+                    )
+                } else {
+                    null
+                }
+            },
+        )
+
+        val failure = assertThrows(IllegalArgumentException::class.java) {
+            RpContainers.resolveFilterField("documentId[RECEIPT].number", misconfigured)
+        }
+
+        assertFalse(failure is FilterPathException)
+    }
+
     @Test
     fun `an ambiguous name of a join is not a path failure`() {
         val join = FpRegions.join(FpCustomers, JoinType.CROSS)
