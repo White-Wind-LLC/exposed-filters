@@ -1,8 +1,10 @@
 package ua.wwind.exposed.filters.jdbc
 
 import org.jetbrains.exposed.v1.core.Column
+import org.jetbrains.exposed.v1.core.ColumnType
 import org.jetbrains.exposed.v1.core.QueryBuilder
 import org.jetbrains.exposed.v1.core.Table
+import org.jetbrains.exposed.v1.core.VarCharColumnType
 import org.jetbrains.exposed.v1.core.alias
 import org.jetbrains.exposed.v1.core.and
 import org.jetbrains.exposed.v1.core.eq
@@ -26,6 +28,22 @@ import ua.wwind.exposed.filters.core.FilterRequest
 
 internal enum class DocKind { RECEIPT, SHIPMENT }
 
+/** A document kind stored as a one-letter code, which only a column mapper can build from a target. */
+@JvmInline
+internal value class DocTag(val code: String)
+
+internal class DocTagColumnType : ColumnType<DocTag>() {
+    private val delegate = VarCharColumnType(1)
+
+    override fun sqlType(): String = delegate.sqlType()
+
+    override fun nonNullValueToString(value: DocTag): String = delegate.nonNullValueToString(value.code)
+
+    override fun notNullValueToDB(value: DocTag): Any = value.code
+
+    override fun valueFromDB(value: Any): DocTag = value as? DocTag ?: DocTag(value.toString())
+}
+
 internal object RpReceipts : Table("rp_receipts") {
     val id: Column<Int> = integer("id")
     val number: Column<String> = varchar("number", 20)
@@ -40,9 +58,9 @@ internal object RpShipments : Table("rp_shipments") {
 }
 
 /**
- * A container holding a document of one of several kinds, stored twice: the kind as an enum beside
- * `documentId`, and as free text beside `documentRef`. Neither id has a foreign key: the kind decides
- * the table it points into.
+ * A container holding a document of one of several kinds. The kind is stored as an enum and as a
+ * [DocTag] beside `documentId`, and as free text beside `documentRef`. Neither id has a foreign key:
+ * the kind decides the table it points into.
  */
 internal object RpContainers : Table("rp_containers") {
     val id: Column<Int> = integer("id")
@@ -51,6 +69,7 @@ internal object RpContainers : Table("rp_containers") {
     val documentId: Column<Int?> = integer("document_id").nullable()
     val documentKind: Column<String?> = varchar("document_kind", 20).nullable()
     val documentRef: Column<Int?> = integer("document_ref").nullable()
+    val documentTag: Column<DocTag?> = registerColumn("document_tag", DocTagColumnType()).nullable()
     override val primaryKey = PrimaryKey(id)
 }
 
@@ -87,8 +106,8 @@ internal val rpDocumentReferences: (Column<*>) -> PolymorphicReferenceInfo? = { 
  * customers    1 Acme
  * receipts     1 R-1 (customer 1)
  * shipments    1 S-1
- * containers   1 (RECEIPT, document 1, kind "receipt", ref 1)
- *              2 (SHIPMENT, document 1, kind "RECEIPT", ref 1)
+ * containers   1 (RECEIPT, document 1, kind "receipt", ref 1, tag R)
+ *              2 (SHIPMENT, document 1, kind "RECEIPT", ref 1, tag S)
  *              3 (nothing)
  *              4 (no type, document 1)
  * moves        50 → container 1, 51 → container 2
@@ -131,10 +150,10 @@ abstract class PolymorphicPathContract {
             it[id] = 1
             it[number] = "S-1"
         }
-        insertContainer(1, DocKind.RECEIPT, document = 1, kind = "receipt", ref = 1)
-        insertContainer(2, DocKind.SHIPMENT, document = 1, kind = "RECEIPT", ref = 1)
-        insertContainer(3, type = null, document = null, kind = null, ref = null)
-        insertContainer(4, type = null, document = 1, kind = null, ref = null)
+        insertContainer(1, DocKind.RECEIPT, document = 1, kind = "receipt", ref = 1, tag = DocTag("R"))
+        insertContainer(2, DocKind.SHIPMENT, document = 1, kind = "RECEIPT", ref = 1, tag = DocTag("S"))
+        insertContainer(3, type = null, document = null, kind = null, ref = null, tag = null)
+        insertContainer(4, type = null, document = 1, kind = null, ref = null, tag = null)
         listOf(50 to 1, 51 to 2).forEach { (id, container) ->
             RpMoves.insert {
                 it[RpMoves.id] = id
@@ -143,7 +162,7 @@ abstract class PolymorphicPathContract {
         }
     }
 
-    private fun insertContainer(id: Int, type: DocKind?, document: Int?, kind: String?, ref: Int?) {
+    private fun insertContainer(id: Int, type: DocKind?, document: Int?, kind: String?, ref: Int?, tag: DocTag?) {
         RpContainers.insert {
             it[RpContainers.id] = id
             it[code] = "C-$id"
@@ -151,6 +170,7 @@ abstract class PolymorphicPathContract {
             it[documentId] = document
             it[documentKind] = kind
             it[documentRef] = ref
+            it[documentTag] = tag
         }
     }
 
@@ -198,6 +218,32 @@ abstract class PolymorphicPathContract {
     fun `a varchar discriminator matches the target case-sensitively`() {
         // Container 1 stores "receipt": case-insensitive strings, the default, do not apply to a target.
         assertEquals(listOf(2), containerIds(eq("documentRef[RECEIPT].number", "R-1")))
+    }
+
+    @Test
+    fun `a target is converted through a column mapper`() {
+        val tags = columnMappers {
+            mapper { type, raw ->
+                if (type is DocTagColumnType) mapOf("RECEIPT" to "R", "SHIPMENT" to "S")[raw]?.let(::DocTag) else null
+            }
+        }
+        val byTag = FilterOptions(
+            polymorphicReferenceResolver = { column ->
+                if (column == RpContainers.documentId) {
+                    rpDocumentReferences(column)?.copy(discriminator = RpContainers.documentTag)
+                } else {
+                    null
+                }
+            },
+        )
+        fun tagged(filter: FilterRequest): List<Int> = transaction {
+            RpContainers.selectAll()
+                .applyFiltersOn(RpContainers, filter, tags, byTag)
+                .map { it[RpContainers.id] }
+                .sorted()
+        }
+        assertEquals(listOf(1), tagged(eq("documentId[RECEIPT].number", "R-1")))
+        assertEquals(listOf(2), tagged(eq("documentId[SHIPMENT].number", "S-1")))
     }
 
     @Test
