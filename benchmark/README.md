@@ -50,6 +50,7 @@ Numbers are only comparable across runs on the same machine and JDK. Baselines s
 | 1.12.0 | Apple M4 Pro | OpenJDK 21.0.12 |
 | 1.13.0 | Apple M2 Max | OpenJDK 17.0.11 |
 | 1.14.0 | Apple M4 Pro | OpenJDK 17.0.20 |
+| 1.16.0 | Apple M4 Pro, loaded (load average ≈17 on 14 cores): not comparable | OpenJDK 17.0.20 |
 
 ### Baseline 1.12.0 (µs per request, build + render SQL, no DB)
 
