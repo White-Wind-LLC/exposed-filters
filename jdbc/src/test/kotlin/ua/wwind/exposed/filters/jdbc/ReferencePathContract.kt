@@ -258,7 +258,10 @@ abstract class ReferencePathContract {
 
     @Test
     fun `hop back to the root table`() {
-        assertEquals(listOf(10), ids(RpOrders, RpOrders.id, eq("customerId.lastOrderId.number", "SO-11")))
+        val filter = eq("customerId.lastOrderId.number", "SO-11")
+        assertEquals(listOf(10), ids(RpOrders, RpOrders.id, filter))
+        val sql = renderedSql(RpOrders, filter)
+        assertTrue(sql.contains("ef_2"), sql)
     }
 
     @Test
@@ -411,10 +414,21 @@ abstract class ReferencePathContract {
 
     @Test
     fun `hops then IN_HIERARCHY`() {
-        val filter = FilterRequest(
-            FilterLeaf(listOf(FieldFilter("productId.categoryId.parentId", FilterOperator.IN_HIERARCHY, listOf("1")))),
+        fun underCategory(id: String) = FilterRequest(
+            FilterLeaf(listOf(FieldFilter("productId.categoryId.parentId", FilterOperator.IN_HIERARCHY, listOf(id)))),
         )
-        assertEquals(listOf(100, 103), lineIds(filter))
+        assertEquals(listOf(100, 103), lineIds(underCategory("1")))
+        // Category 3 has no children: the parent is what is compared, not the product's category one hop short.
+        assertEquals(emptyList<Int>(), lineIds(underCategory("3")))
+    }
+
+    @Test
+    fun `empty values through hops`() {
+        // NOT_IN with no values is TRUE inside the EXISTS, so a line whose order has no customer still fails.
+        val anyCustomer = FilterRequest(
+            FilterLeaf(listOf(FieldFilter("orderId.customerId.name", FilterOperator.NOT_IN, emptyList()))),
+        )
+        assertEquals(listOf(100, 101, 102), lineIds(anyCustomer))
     }
 
     @Test
