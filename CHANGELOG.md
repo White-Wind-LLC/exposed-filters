@@ -29,8 +29,8 @@ All notable changes to this project will be documented in this file.
   **Behavior change**: path failures that threw `IllegalStateException` (an unknown base of a dotted path, an unknown
   nested field, a column that is not a reference) now throw `FilterPathException`.
 - JDBC: a `nestedFieldResolver` projection is checked before SQL is built. **Behavior change**: a projection whose
-  source exposes a table already in scope on the path, or whose expression reads a table its source does not expose,
-  now fails with `IllegalArgumentException`; it rendered SQL that compared against the wrong row.
+  source makes visible a name already in scope on the path, or whose expression reads a table its source does not make
+  visible, now fails with `IllegalArgumentException`; it rendered SQL that compared against the wrong row.
 - JDBC: **Behavior change**: `nestedFieldResolver` is called once per hop with one field name, never a dotted
   remainder, and receives an `Alias` of the target table when the hop is aliased; a resolver that keys by table identity
   returns `null` for it and the field is read from the alias.

@@ -444,7 +444,11 @@ Orders.selectAll().applyFiltersOn(Orders, filter, options)
 
 A table that appears twice on a path (a self-reference such as `parentId.parentId.name` on categories, or a path that
 returns to the root table) is aliased so the inner occurrence never shadows the outer one. Hop *n* is aliased
-`ef_<n>` (1-based) when its table is already in scope, and read unaliased otherwise:
+`ef_<n>` (1-based) when its table's name is already in scope, and read unaliased otherwise. In scope are the name of
+the root's table (or its alias), then, for each earlier hop, the names its source makes visible: the table or alias it
+reads or, for a projection (see "Reading a nested field from somewhere other than the target table"), the names the
+projection's source makes visible — a table's or alias's name, a subquery's alias, each part of a join. A plain table
+counts by its name without the schema, as SQL sees an unaliased `archive.orders`:
 
 ```sql
 EXISTS (SELECT … FROM categories ef_1 WHERE ef_1.id = categories.parent_id AND
@@ -517,12 +521,27 @@ allow-list of fields, a depth limit of your own) with the library's own resoluti
 filters a new rule would refuse.
 
 ```kotlin
-val resolved = Orders.resolveFilterField("customerId.regionId.name", options)
+// The fields a user may filter on, per table, and the tables the user may read.
+val allowedFields: Map<Table, Set<String>> = mapOf(
+    Orders to setOf("number", "customerId"),
+    Customers to setOf("name", "regionId"),
+    Regions to setOf("name"),
+)
 
-resolved.hops.forEach { hop ->
-    check(hop.tables.all { it in readableTables }) { "No access to ${hop.segment}" }
+fun checkAllowed(filter: FieldFilter, readableTables: Set<Table>) {
+    val resolved = Orders.resolveFilterField(filter.field, options)
+    check(resolved.rootName in allowedFields[Orders].orEmpty()) { "Field ${resolved.rootName} is not allowed" }
+    resolved.hops.forEach { hop ->
+        val target = hop.reference.referencedTable
+        check(hop.field in allowedFields[target].orEmpty()) { "Field ${hop.field} of ${target.tableName} is not allowed" }
+        check(hop.tables.all { it in readableTables }) { "No access to the tables read by ${hop.segment}" }
+    }
+    if (filter.operator == FilterOperator.IN_HIERARCHY) {
+        // The tree is in no hop's tables. IN_HIERARCHY refuses anything but a column anyway.
+        val tree = (resolved.expression as? Column<*>)?.filterHierarchy(options)
+        check(tree == null || tree.idColumn.table in readableTables) { "No access to the tree of ${filter.field}" }
+    }
 }
-check(resolved.hops.last().field in allowedRegionFields)
 ```
 
 A `Map<String, ExpressionWithColumnType<*>>` has the same function for custom expression maps. For a column compared
@@ -632,15 +651,18 @@ the target table's own column, leaving the emitted SQL unchanged.
 
 On a path with several hops the resolver is called once per hop, with that hop's table and one field name (never a
 dotted remainder). When the target table is aliased (see "Tables met twice on a path"), the table it receives is the
-`Alias`; a resolver that compares tables by identity returns `null` for it and the field is read from the alias. A
-projection at a middle hop must let the next hop continue: its `expression` is a reference column or a JSON column.
+`Alias`; a resolver that compares tables by identity returns `null` for it and the field is read from the alias. To
+project there as well, key on `(table as? Alias<*>)?.delegate ?: table` and build the projection over the table passed
+in. A projection at a middle hop must let the next hop continue: its `expression` is a reference column or a JSON
+column.
 
 Every projection is checked before any SQL is built, and a breach fails with `IllegalArgumentException`:
 
-- the tables its `source` exposes must not include one already in scope on the path (the root table, or a table of an
-  earlier hop), which would bind a reference to the wrong row;
-- its `expression` and `idExpression` may read only columns of tables its `source` exposes (an expression built over
-  the plain table while the source reads its alias fails).
+- the names its `source` makes visible (a table's or alias's name, a subquery's alias, each part of a join) must not
+  include one already in scope on the path (see "Tables met twice on a path"), which would bind a reference to the
+  wrong row;
+- its `expression` and `idExpression` may read only columns of tables its `source` makes visible (an expression built
+  over the plain table while the source reads its alias fails).
 
 A CTE, subquery or temporary table at an aliased hop passes when it sets `idExpression`.
 

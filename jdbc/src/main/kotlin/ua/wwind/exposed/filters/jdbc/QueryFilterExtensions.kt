@@ -45,6 +45,10 @@ import ua.wwind.exposed.filters.core.FilterRequest
  * A SQL name exposed by more than one source of a Join (e.g. `name` on both joined tables) is
  * ambiguous: filtering on it throws [IllegalArgumentException] instead of picking one of the columns.
  * Use [applyFilters] with an explicit mapping to disambiguate.
+ *
+ * A dotted field follows references from the field it starts at, as [applyFilters] describes.
+ *
+ * @throws FilterPathException when a field's path cannot be resolved (see [resolveFilterField]).
  */
 public fun Query.applyFiltersOn(
     columnSet: ColumnSet,
@@ -61,6 +65,8 @@ public fun Query.applyFiltersOn(
 /**
  * Same as [applyFiltersOn] but allows passing a [mappersModule] to handle predicates
  * for custom column types when standard mappings do not apply.
+ *
+ * @throws FilterPathException when a field's path cannot be resolved (see [resolveFilterField]).
  */
 public fun Query.applyFiltersOn(
     columnSet: ColumnSet,
@@ -82,13 +88,18 @@ public fun Query.applyFiltersOn(
  *
  * Supports both [Column] and [ExpressionWithColumnType] (e.g., `coalesce()`, `concat()`, aliased columns).
  *
- * **Note:** Nested field filters (e.g., `user.name`) are only supported when the expression
- * is a [Column] with a foreign key reference.
+ * A dotted field (`orderId.customerId.name`) starts at the longest dot-delimited prefix that is a key of
+ * [expressions] and follows a reference per segment — Exposed's own, or one [FilterOptions.referenceResolver]
+ * or [FilterOptions.polymorphicReferenceResolver] gives for a column — up to [FilterOptions.maxReferenceHops],
+ * each as a nested `EXISTS`. Below a JSON column the rest of the field is a JSON path. A computed expression
+ * has no reference to follow. [resolveFilterField] returns the resolved path without building a query.
  *
  * A predicate on an aggregate expression (e.g. `qty.sum()`, also inside another expression, or any field
  * listed in [FilterOptions.aggregateFields]) is added to `HAVING`, every other predicate to `WHERE`.
  * An OR/NOT group that touches an aggregate goes to `HAVING` whole. A window function (`over()`) cannot be
  * filtered at the query level that computes it and fails with [IllegalArgumentException].
+ *
+ * @throws FilterPathException when a field's path cannot be resolved (see [resolveFilterField]).
  */
 public fun Query.applyFilters(
     expressions: Map<String, ExpressionWithColumnType<*>>,
@@ -101,6 +112,8 @@ public fun Query.applyFilters(
 
 /**
  * Same as [applyFilters] but allows passing a [mappersModule].
+ *
+ * @throws FilterPathException when a field's path cannot be resolved (see [resolveFilterField]).
  */
 public fun Query.applyFilters(
     expressions: Map<String, ExpressionWithColumnType<*>>,

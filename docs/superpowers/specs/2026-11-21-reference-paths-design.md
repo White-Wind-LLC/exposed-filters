@@ -157,9 +157,11 @@ subquery, which compared each inner row with itself. It is now aliased and corre
 ## Aliases
 
 The names in scope along a path are: the name of the root expression's table (an alias's name when it is one), then,
-per hop, the occurrence's name and the names of the tables its source reads. Hop *i*'s target is aliased `ef_<i>`
-(1-based) when its table name is among them, and read unaliased otherwise — so a one-hop path to a different table
-renders as today. Names starting with `ef_` are reserved by the library, as `ef_tree` and `ef_child` already are.
+per hop, the names its source makes visible — the occurrence's name when the hop reads the occurrence; for a
+projection, the names its source makes visible (a table's or an alias's name, a `QueryAlias`'s alias, a join's parts).
+A plain table counts by its name without the schema, as SQL sees an unaliased `FROM archive.orders`. Hop *i*'s target
+is aliased `ef_<i>` (1-based) when its table name is among them, and read unaliased otherwise — so a one-hop path to a
+different table renders as today. Names starting with `ef_` are reserved by the library, as `ef_tree` and `ef_child` already are.
 
 An aliased occurrence reaches `nestedFieldResolver` as its `Table` argument (`Alias.delegate` is the target table). A
 resolver that keys by table identity returns `null` for an alias, and the field is then read plainly from the alias.
@@ -173,7 +175,8 @@ resolver is misconfigured, not the path:
 
 - the names its source makes visible (a table's name, an alias's or a `QueryAlias`'s name, a join's parts) must not
   include a name already in scope outside it on the path;
-- its `expression` and `idExpression` may read only columns of tables its source makes visible.
+- its `expression` and `idExpression` may read only columns of tables its source makes visible, compared by the
+  qualifier a column renders with (its schema included).
 
 A CTE, subquery or temporary table at an aliased hop passes when it sets `idExpression`. A one-hop projection that
 breaks either rule renders SQL today that compares against the wrong row; it now fails instead, and the changelog says

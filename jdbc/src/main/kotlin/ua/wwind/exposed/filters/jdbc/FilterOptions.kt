@@ -64,12 +64,21 @@ public data class PolymorphicReferenceInfo(
  * physical FK but the logical one is recorded elsewhere (an annotation, a registry). For a column of
  * a table alias or a subquery it receives the original table column behind the clone, never the clone.
  * `IN_HIERARCHY` auto-detection consults it the same way to find the tree a column points into.
- * @property nestedFieldResolver Replaces what a nested field path reads, given the resolved target
- * table and the nested field name. Unlike [referenceResolver] it is consulted for every nested path,
- * including one Exposed resolves itself, because the reference is not what needs replacing — the
- * column behind it is. Return `null` to read the target table's own column, which is the default and
- * keeps the emitted SQL unchanged. Useful when the readable value lives beside the target table
- * rather than in it, as a translation does.
+ * @property nestedFieldResolver Replaces what a hop of a filter path reads, given the table the hop
+ * enters and the one field it reads there. It is called once per hop, never with a dotted remainder:
+ * `orderId.customerId.name` asks for `customerId` of the orders table, then for `name` of the customers
+ * table. When a table of the target's name is already in scope on the path, the table passed in is an
+ * `Alias` of the target (`ef_<n>`): key on `(table as? Alias<*>)?.delegate ?: table`, and build the
+ * projection over the table passed in, since an expression over the plain table would read another
+ * row. Unlike [referenceResolver] it is consulted for every hop, including one Exposed resolves itself,
+ * because the reference is not what needs replacing — the column behind it is. Return `null` to read
+ * the target table's own column (through the alias when there is one), which is the default and keeps
+ * the emitted SQL unchanged. A projection at a middle hop must let the next hop continue: its
+ * expression is a column with a reference to follow, or JSON. Every projection is checked before any
+ * SQL is built and a breach fails with [IllegalArgumentException]: the names its source makes visible
+ * must not include one already in scope on the path, and its expression and id expression may read
+ * only columns of tables its source makes visible. Useful when the readable value lives beside the
+ * target table rather than in it, as a translation does.
  * @property aggregateFields Field names whose expressions are aggregates the library cannot recognize
  * on its own, e.g. a `CustomFunction("array_agg", ...)`. Predicates on these fields go to `HAVING`
  * instead of `WHERE`. Exposed's built-in aggregates (`sum()`, `count()`, `min()`, `max()`, `avg()`,
