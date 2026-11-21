@@ -209,7 +209,7 @@ public fun Map<String, ExpressionWithColumnType<*>>.resolveFilterField(
     options: FilterOptions = DefaultFilterOptions,
 ): ResolvedFilterField
 
-public data class ResolvedFilterField(
+public class ResolvedFilterField internal constructor(
     public val field: String,                            // as written
     public val rootName: String,                         // the key of the expression map
     public val rootExpression: ExpressionWithColumnType<*>,
@@ -218,7 +218,7 @@ public data class ResolvedFilterField(
     public val jsonPath: List<String>,                   // empty unless a JSON path
 )
 
-public data class ResolvedHop(
+public class ResolvedHop internal constructor(
     public val segment: String,                          // leaving the previous scope, as written: "documentId[RECEIPT]"
     public val referenceColumn: Column<*>,               // original column holding the reference
     public val target: String?,                          // named target of a reference with several targets
@@ -234,6 +234,8 @@ public data class ResolvedHop(
 public fun Column<*>.filterHierarchy(options: FilterOptions = DefaultFilterOptions): HierarchyInfo
 ```
 
+- Both are plain classes, not data classes, and only the library constructs them: a field added later changes no
+  `copy`, `componentN` or constructor a consumer compiled against. `toString()` names columns and tables as SQL does.
 - `tables` lists the target table and every table of the projection's source: joins flattened, aliases unwrapped to
   their tables, a `QueryAlias` contributing the tables its query reads (every statement of a set operation). A consumer
   checks read access to each. Tables read only by a scalar subquery inside a projection's expression, or inside the

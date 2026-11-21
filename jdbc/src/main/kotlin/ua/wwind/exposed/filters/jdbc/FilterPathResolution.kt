@@ -29,14 +29,18 @@ import java.util.IdentityHashMap
  * @property expression The expression a predicate compares; for a JSON path, the JSON column it reads.
  * @property jsonPath The JSON path read below [expression]; empty unless the path reaches a JSON column.
  */
-public data class ResolvedFilterField(
+public class ResolvedFilterField internal constructor(
     public val field: String,
     public val rootName: String,
     public val rootExpression: ExpressionWithColumnType<*>,
     public val hops: List<ResolvedHop>,
     public val expression: ExpressionWithColumnType<*>,
     public val jsonPath: List<String>,
-)
+) {
+    override fun toString(): String =
+        "ResolvedFilterField(field=$field, rootName=$rootName, rootExpression=${rootExpression.describe()}, " +
+            "hops=$hops, expression=${expression.describe()}, jsonPath=$jsonPath)"
+}
 
 /**
  * One reference a filter path follows: where it leaves the previous scope, the table it enters and
@@ -64,7 +68,7 @@ public data class ResolvedFilterField(
  * statement of a set operation included. Tables read only by a scalar subquery inside the projection's
  * expression, or inside a subquery's conditions, are not listed.
  */
-public data class ResolvedHop(
+public class ResolvedHop internal constructor(
     public val segment: String,
     public val referenceColumn: Column<*>,
     public val referenceExpression: Column<*>,
@@ -78,7 +82,24 @@ public data class ResolvedHop(
     public val idExpression: ExpressionWithColumnType<*>,
     public val expression: ExpressionWithColumnType<*>,
     public val tables: List<Table>,
-)
+) {
+    override fun toString(): String =
+        "ResolvedHop(segment=$segment, target=$target, reference=${reference.referencedIdColumn.describe()}, " +
+            "occurrence=${occurrence.describe()}, field=$field, projection=${projection?.expression?.describe()}, " +
+            "source=${source.describe()}, idExpression=${idExpression.describe()}, " +
+            "expression=${expression.describe()}, tables=${tables.map { it.describe() }})"
+}
+
+/** A column as SQL names it (`ef_1.name`); any other expression as it prints itself. */
+private fun Expression<*>.describe(): String = if (this is Column<*>) "${table.qualifier()}.$name" else toString()
+
+/** A table by its name, an alias by its table's name and its own (`categories ef_1`), a subquery by its alias. */
+private fun ColumnSet.describe(): String = when (this) {
+    is Alias<*> -> "${delegate.describe()} $alias"
+    is Table -> tableName
+    is QueryAlias -> alias
+    else -> scopeNames().joinToString(prefix = "[", postfix = "]")
+}
 
 /**
  * Resolves [field] against the fields of this [ColumnSet] exactly as [applyFiltersOn] looks them up,

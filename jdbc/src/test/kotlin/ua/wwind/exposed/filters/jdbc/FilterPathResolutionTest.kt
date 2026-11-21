@@ -230,6 +230,24 @@ class FilterPathResolutionTest {
     }
 
     @Test
+    fun `a resolved path is a plain value that prints in SQL names`() {
+        // Not data classes: a field added later must not change a copy or componentN signature.
+        assertFalse(ResolvedFilterField::class.isData)
+        assertFalse(ResolvedHop::class.isData)
+
+        val resolved = FpCategories.resolveFilterField("parentId.name", deep)
+
+        assertEquals(
+            "ResolvedFilterField(field=parentId.name, rootName=parentId, rootExpression=fp_categories.parent_id, " +
+                "hops=[ResolvedHop(segment=parentId, target=null, reference=fp_categories.id, " +
+                "occurrence=fp_categories ef_1, field=name, projection=null, source=fp_categories ef_1, " +
+                "idExpression=ef_1.id, expression=ef_1.name, tables=[fp_categories])], " +
+                "expression=ef_1.name, jsonPath=[])",
+            resolved.toString(),
+        )
+    }
+
+    @Test
     fun `a JSON column behind a hop takes the rest of the path`() {
         val resolved = FpOrders.resolveFilterField("customerId.profile.tier", deep)
 
