@@ -179,6 +179,7 @@ private fun followReference(field: String, position: Int, at: PathSegment, from:
         if (reference != null) return FollowedReference(reference, discriminator = null)
         val polymorphic = options.polymorphicReferenceResolver?.invoke(original)
         if (polymorphic != null) {
+            requireDiscriminatorBeside(field, at, polymorphic, original)
             val problem = "has several targets; name one of ${polymorphic.targets.keys.joinToString()}"
             throw pathFailure(field, position, at, Reason.TARGET_REQUIRED, problem)
         }
@@ -191,11 +192,7 @@ private fun followReference(field: String, position: Int, at: PathSegment, from:
         reason = Reason.TARGET_NOT_SUPPORTED,
         problem = "names a target, but its column has no choice of targets",
     )
-    require(polymorphic.discriminator.table == original.table) {
-        "Filter field '$field': the discriminator of the reference at segment '${at.raw}' is " +
-            "${polymorphic.discriminator.table.tableName}.${polymorphic.discriminator.name}, " +
-            "which is not a column of ${original.table.tableName}"
-    }
+    requireDiscriminatorBeside(field, at, polymorphic, original)
     val reference = polymorphic.targets[target] ?: throw pathFailure(
         field = field,
         position = position,
@@ -204,6 +201,21 @@ private fun followReference(field: String, position: Int, at: PathSegment, from:
         problem = "names a target its reference does not know; known: ${polymorphic.targets.keys.joinToString()}",
     )
     return FollowedReference(reference, polymorphic.discriminator)
+}
+
+/** Refuses a resolver whose discriminator is not a column of the table holding [reference]. */
+private fun requireDiscriminatorBeside(
+    field: String,
+    at: PathSegment,
+    polymorphic: PolymorphicReferenceInfo,
+    reference: Column<*>,
+) {
+    val discriminator = polymorphic.discriminator
+    require(discriminator.table == reference.table) {
+        "Filter field '$field': the discriminator of the reference at segment '${at.raw}' is " +
+            "${discriminator.table.tableName}.${discriminator.name}, " +
+            "which is not a column of ${reference.table.tableName}"
+    }
 }
 
 /**

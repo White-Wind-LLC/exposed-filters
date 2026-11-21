@@ -435,26 +435,38 @@ class FilterPathResolutionTest {
         }
     }
 
+    /** Describes `documentId` with a discriminator of another table. */
+    private val misplacedDiscriminator = FilterOptions(
+        polymorphicReferenceResolver = { column ->
+            if (column == RpContainers.documentId) {
+                PolymorphicReferenceInfo(
+                    discriminator = RpMoves.containerId,
+                    targets = mapOf("RECEIPT" to ReferenceInfo(RpReceipts.id, RpReceipts)),
+                )
+            } else {
+                null
+            }
+        },
+    )
+
     @Test
     fun `a discriminator on another table is a misconfiguration, not a path failure`() {
-        val misconfigured = FilterOptions(
-            polymorphicReferenceResolver = { column ->
-                if (column == RpContainers.documentId) {
-                    PolymorphicReferenceInfo(
-                        discriminator = RpMoves.containerId,
-                        targets = mapOf("RECEIPT" to ReferenceInfo(RpReceipts.id, RpReceipts)),
-                    )
-                } else {
-                    null
-                }
-            },
-        )
-
         val failure = assertThrows(IllegalArgumentException::class.java) {
-            RpContainers.resolveFilterField("documentId[RECEIPT].number", misconfigured)
+            RpContainers.resolveFilterField("documentId[RECEIPT].number", misplacedDiscriminator)
         }
 
         assertFalse(failure is FilterPathException)
+        assertTrue(failure.message.orEmpty().contains("rp_moves.container_id"), failure.message)
+    }
+
+    @Test
+    fun `a discriminator on another table is a misconfiguration even when no target is named`() {
+        val failure = assertThrows(IllegalArgumentException::class.java) {
+            RpContainers.resolveFilterField("documentId.number", misplacedDiscriminator)
+        }
+
+        assertFalse(failure is FilterPathException)
+        assertTrue(failure.message.orEmpty().contains("rp_moves.container_id"), failure.message)
     }
 
     @Test
