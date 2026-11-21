@@ -29,6 +29,10 @@ import org.junit.jupiter.api.Assertions.assertSame
 import org.junit.jupiter.api.Assertions.assertThrows
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
+import ua.wwind.exposed.filters.core.FieldFilter
+import ua.wwind.exposed.filters.core.FilterLeaf
+import ua.wwind.exposed.filters.core.FilterOperator
+import ua.wwind.exposed.filters.core.FilterRequest
 import ua.wwind.exposed.filters.jdbc.FilterPathException.Reason
 
 private object FpRegions : Table("fp_regions") {
@@ -81,6 +85,12 @@ private object FpArchivedOrders : Table("archive.fp_orders") {
     val id: Column<Int> = integer("id")
     val number: Column<String> = varchar("number", 20)
     override val primaryKey = PrimaryKey(id)
+}
+
+/** Links that carry a `document_id` too, so joining them to [RpContainers] makes that name ambiguous. */
+private object FpDocumentLinks : Table("fp_document_links") {
+    val id: Column<Int> = integer("id")
+    val documentId: Column<Int> = integer("document_id")
 }
 
 /** The containers table of [RpContainers] modelled without its discriminator, as a narrower view of it. */
@@ -609,6 +619,33 @@ class FilterPathResolutionTest {
         val resolved = FpNarrowContainers.resolveFilterField("documentId[RECEIPT].number", polymorphic)
 
         assertEquals(RpContainers.documentType, resolved.hops.single().discriminator)
+    }
+
+    @Test
+    fun `a target or a dotted key at the root of an ambiguous name splits as resolution does`() {
+        val join = RpContainers.join(FpDocumentLinks, JoinType.CROSS)
+        val first = RpContainers.select(RpContainers.id, RpContainers.documentId.alias("doc.ref")).alias("first")
+        val second = FpDocumentLinks.select(FpDocumentLinks.id, FpDocumentLinks.documentId.alias("doc.ref")).alias("second")
+        val subqueries = first.join(second, JoinType.CROSS)
+        val cases = listOf(
+            Triple(join, "document_id[RECEIPT].number", "document_id"),
+            Triple(subqueries, "doc.ref[RECEIPT].number", "doc.ref"),
+            Triple(subqueries, "doc.ref.number", "doc.ref"),
+        )
+
+        for ((source, field, baseName) in cases) {
+            val filter = FilterRequest(FilterLeaf(listOf(FieldFilter(field, FilterOperator.EQ, listOf("R-1")))))
+            val byFilter = assertThrows(IllegalArgumentException::class.java) {
+                source.selectAll().applyFiltersOn(source, filter, polymorphic)
+            }
+            val byResolution = assertThrows(IllegalArgumentException::class.java) {
+                source.resolveFilterField(field, polymorphic)
+            }
+            listOf(byFilter, byResolution).forEach { failure ->
+                assertFalse(failure is FilterPathException, field)
+                assertTrue(failure.message.orEmpty().startsWith("Ambiguous filter field: '$baseName'"), failure.message)
+            }
+        }
     }
 
     @Test

@@ -16,6 +16,7 @@ import org.jetbrains.exposed.v1.exceptions.UnsupportedByDialectException
 import org.jetbrains.exposed.v1.jdbc.Query
 import org.jetbrains.exposed.v1.jdbc.SchemaUtils
 import org.jetbrains.exposed.v1.jdbc.insert
+import org.jetbrains.exposed.v1.jdbc.select
 import org.jetbrains.exposed.v1.jdbc.selectAll
 import org.jetbrains.exposed.v1.jdbc.transactions.transaction
 import org.jetbrains.exposed.v1.json.json
@@ -283,6 +284,21 @@ abstract class ReferencePathContract {
     }
 
     @Test
+    fun `two hops from a subquery root`() {
+        // Only the subquery's alias is in scope at the root, so the first hop reads the table unaliased.
+        val categories = RpCategories.select(RpCategories.id, RpCategories.parentId).alias("qc")
+        val columns = mapOf("id" to categories[RpCategories.id], "parentId" to categories[RpCategories.parentId])
+        transaction {
+            val query = categories.selectAll().applyFilters(columns, eq("parentId.parentId.name", "Root"), deep)
+            assertEquals(listOf(3), query.map { it[categories[RpCategories.id]] }.sorted())
+            val sql = query.prepareSQL(QueryBuilder(false))
+            assertEquals(2, sql.existsCount(), sql)
+            assertTrue(sql.contains("ef_2"), sql)
+            assertFalse(sql.contains("ef_1"), sql)
+        }
+    }
+
+    @Test
     fun `two deep paths in one OR group`() {
         val filter = FilterRequest(
             FilterGroup(
@@ -364,6 +380,33 @@ abstract class ReferencePathContract {
             },
         )
         assertEquals(listOf(2), categoryIds(eq("parentId.name", "R"), options))
+    }
+
+    @Test
+    fun `subquery projection with idExpression at an aliased hop`() {
+        // Every hop to a category is aliased; the projection reads the code from a subquery instead of the name.
+        val codes = RpCategories.select(RpCategories.id, RpCategories.code).alias("codes")
+        val options = deep.copy(
+            nestedFieldResolver = { table, field ->
+                val target = (table as? Alias<*>)?.delegate ?: table
+                if (table is Alias<*> && target === RpCategories && field == "name") {
+                    NestedFieldProjection(
+                        source = codes,
+                        expression = codes[RpCategories.code],
+                        idExpression = codes[RpCategories.id],
+                    )
+                } else {
+                    null
+                }
+            },
+        )
+        val oneHop = eq("parentId.name", "R")
+        assertEquals(listOf(2), categoryIds(oneHop, options))
+        assertTrue(renderedSql(RpCategories, oneHop, options).contains("codes"))
+        val twoHops = eq("parentId.parentId.name", "R")
+        assertEquals(listOf(3), categoryIds(twoHops, options))
+        val sql = renderedSql(RpCategories, twoHops, options)
+        assertTrue(sql.contains("ef_1") && sql.contains("codes"), sql)
     }
 
     // ----- JSON -----

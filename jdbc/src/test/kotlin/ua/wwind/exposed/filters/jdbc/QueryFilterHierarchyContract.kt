@@ -595,6 +595,23 @@ abstract class QueryFilterHierarchyContract {
     }
 
     @Test
+    fun `filterHierarchy takes the resolver's tree over a reference and auto-detection`() {
+        val folders = HierarchyInfo(HFolders.id, HFolders.parentId)
+        val options = FilterOptions(
+            hierarchyResolver = { column ->
+                if (column == HListings.categoryId || column == HProducts.categoryId) folders else null
+            },
+            referenceResolver = { column ->
+                if (column == HListings.categoryId) ReferenceInfo(HCategories.id, HCategories) else null
+            },
+        )
+        // Without the resolver, the first leads into the categories through referenceResolver, the second through
+        // its foreign key.
+        assertEquals(folders, HListings.categoryId.filterHierarchy(options))
+        assertEquals(folders, HProducts.categoryId.filterHierarchy(options))
+    }
+
+    @Test
     fun `filterHierarchy fails on several self-references`() {
         val error = assertThrows(IllegalStateException::class.java) { HNodes.id.filterHierarchy() }
         assertTrue(error.message!!.contains("several self-references"), error.message)
