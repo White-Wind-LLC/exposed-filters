@@ -13,6 +13,7 @@ import org.jetbrains.exposed.v1.core.isNotNull
 import org.jetbrains.exposed.v1.core.lowerCase
 import org.jetbrains.exposed.v1.jdbc.SchemaUtils
 import org.jetbrains.exposed.v1.jdbc.insert
+import org.jetbrains.exposed.v1.jdbc.select
 import org.jetbrains.exposed.v1.jdbc.selectAll
 import org.jetbrains.exposed.v1.jdbc.transactions.transaction
 import org.junit.jupiter.api.AfterEach
@@ -256,6 +257,23 @@ abstract class PolymorphicPathContract {
                 .map { it[c[RpContainers.id]] }
         }
         assertEquals(listOf(1), ids)
+    }
+
+    @Test
+    fun `a subquery over a table alias reads the discriminator through both aliases`() {
+        // The subquery clones each column of the alias onto `ca.alias("qa")`: two levels from the table.
+        val ca = RpContainers.alias("ca")
+        val qa = ca.select(ca[RpContainers.id], ca[RpContainers.documentType], ca[RpContainers.documentId]).alias("qa")
+        val columns = mapOf(
+            "id" to qa[ca[RpContainers.id]],
+            "documentType" to qa[ca[RpContainers.documentType]],
+            "documentId" to qa[ca[RpContainers.documentId]],
+        )
+        fun ids(filter: FilterRequest): List<Int> = transaction {
+            qa.selectAll().applyFilters(columns, filter, polymorphic).map { it[qa[ca[RpContainers.id]]] }.sorted()
+        }
+        assertEquals(listOf(1), ids(eq("documentId[RECEIPT].number", "R-1")))
+        assertEquals(listOf(2), ids(eq("documentId[SHIPMENT].number", "S-1")))
     }
 
     @Test

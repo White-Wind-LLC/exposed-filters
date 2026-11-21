@@ -80,7 +80,9 @@ internal fun hopPredicate(hop: ResolvedHop, inner: Op<Boolean>, field: String): 
     val target = hop.target ?: return correlated
     val discriminator = checkNotNull(hop.discriminator) { "A hop naming target '$target' carries no discriminator" }
     // Read from the occurrence the reference is read from; a target is a tag, so case always matters.
-    val scoped = (hop.referenceExpression.table as? Alias<*>)?.get(discriminator) ?: discriminator
+    val scoped = checkNotNull(hop.referenceExpression.scopedDiscriminator(discriminator)) {
+        "The scope of the reference at '${hop.segment}' carries no discriminator; resolution should have refused it"
+    }
     val chosen = context(options.copy(caseSensitiveStrings = true)) { eqValue(scoped, target, field) }
     return scoped.isNotNull() and chosen and correlated
 }

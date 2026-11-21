@@ -196,6 +196,12 @@ private fun followReference(field: String, position: Int, at: PathSegment, from:
         problem = "names a target, but its column has no choice of targets",
     )
     requireDiscriminatorBeside(field, at, polymorphic, original)
+    val discriminator = polymorphic.discriminator
+    require(from.scopedDiscriminator(discriminator) != null) {
+        "Filter field '$field': the reference at segment '${at.raw}' is read through ${from.table.scopeName()}, " +
+            "which does not carry its discriminator ${discriminator.table.tableName}.${discriminator.name}; " +
+            "read the reference through a source that selects the discriminator"
+    }
     val reference = polymorphic.targets[target] ?: throw pathFailure(
         field = field,
         position = position,
@@ -203,7 +209,7 @@ private fun followReference(field: String, position: Int, at: PathSegment, from:
         reason = Reason.UNKNOWN_TARGET,
         problem = "names a target its reference does not know; known: ${polymorphic.targets.keys.joinToString()}",
     )
-    return FollowedReference(reference, polymorphic.discriminator)
+    return FollowedReference(reference, discriminator)
 }
 
 /** Refuses a resolver whose discriminator is not a column of the table holding [reference]. */
@@ -220,6 +226,15 @@ private fun requireDiscriminatorBeside(
             "which is not a column of ${reference.table.tableName}"
     }
 }
+
+/**
+ * [discriminator] as the scope holding this reference column reads it: the column of this column's
+ * table made from it — an alias's or a subquery's clone, through nested aliases — or [discriminator]
+ * itself when this column is read from a table, not an alias. `null` when this column is read through
+ * an alias that carries no such column.
+ */
+internal fun Column<*>.scopedDiscriminator(discriminator: Column<*>): Column<*>? =
+    table.columns.firstOrNull { it.originalColumn() == discriminator } ?: discriminator.takeIf { table !is Alias<*> }
 
 /**
  * Enters the target of [followed] and reads the segment [next] there. The target is aliased

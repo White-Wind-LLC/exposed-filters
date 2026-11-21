@@ -76,6 +76,12 @@ private object FpCategories : Table("fp_categories") {
     override val primaryKey = PrimaryKey(id)
 }
 
+/** The containers table of [RpContainers] modelled without its discriminator, as a narrower view of it. */
+private object FpNarrowContainers : Table("rp_containers") {
+    val id: Column<Int> = integer("id")
+    val documentId: Column<Int?> = integer("document_id").nullable()
+}
+
 /** A source of a kind the library does not know: it exposes nothing but its columns. */
 private class ColumnsOnlySource(override val columns: List<Column<*>>) : ColumnSet() {
     override fun describe(s: Transaction, queryBuilder: QueryBuilder): Unit = error("never rendered")
@@ -516,6 +522,27 @@ class FilterPathResolutionTest {
 
         assertFalse(failure is FilterPathException)
         assertTrue(failure.message.orEmpty().contains("rp_moves.container_id"), failure.message)
+    }
+
+    @Test
+    fun `a reference read through an alias without its discriminator is a misconfiguration`() {
+        val narrow = FpNarrowContainers.alias("n")
+        val expressions = mapOf("documentId" to narrow[FpNarrowContainers.documentId])
+
+        val failure = assertThrows(IllegalArgumentException::class.java) {
+            expressions.resolveFilterField("documentId[RECEIPT].number", polymorphic)
+        }
+
+        assertFalse(failure is FilterPathException)
+        assertTrue(failure.message.orEmpty().contains("rp_containers.document_type"), failure.message)
+        assertTrue(failure.message.orEmpty().contains("'documentId[RECEIPT]'"), failure.message)
+    }
+
+    @Test
+    fun `a reference read from its own table finds the discriminator there`() {
+        val resolved = FpNarrowContainers.resolveFilterField("documentId[RECEIPT].number", polymorphic)
+
+        assertEquals(RpContainers.documentType, resolved.hops.single().discriminator)
     }
 
     @Test
