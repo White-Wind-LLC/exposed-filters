@@ -28,7 +28,7 @@ import java.util.UUID
 const val BUILD_OPS = 500
 const val EXEC_OPS = 20
 
-/** In-memory H2 database seeded with 10 warehouses and 1000 products. */
+/** In-memory H2 database seeded with 10 warehouses, 1000 products and 2000 stocks. */
 @State(Scope.Benchmark)
 open class DbState {
     @Param
@@ -48,24 +48,25 @@ open class DbState {
     /** The comparison is meaningless unless both variants emit exactly the same SQL. */
     private fun verifySameSql() = transaction(db) {
         val manual = scenario.base().where(scenario.manual()).sql()
-        val library = scenario.base().applyFiltersOn(scenario.source, scenario.request).sql()
-        val cached = scenario.base().applyFilters(cachedMap, scenario.request).sql()
+        val library = scenario.base().applyFiltersOn(scenario.source, scenario.request, scenario.options).sql()
+        val cached = scenario.base().applyFilters(cachedMap, scenario.request, scenario.options).sql()
         check(manual == library && manual == cached) {
             "SQL mismatch for $scenario:\n manual:  $manual\n library: $library\n cached:  $cached"
         }
         val manualRows = scenario.base().where(scenario.manual()).count()
-        val libraryRows = scenario.base().applyFiltersOn(scenario.source, scenario.request).count()
+        val libraryRows =
+            scenario.base().applyFiltersOn(scenario.source, scenario.request, scenario.options).count()
         check(manualRows == libraryRows)
         println("\n[$scenario] rows=$libraryRows  $library")
     }
 
     private fun seed() = transaction(db) {
-        SchemaUtils.create(Warehouses, Products)
+        SchemaUtils.create(Warehouses, Products, Stocks)
         val warehouseIds = Warehouses.batchInsert((1..10).toList()) { i ->
             this[Warehouses.name] = "Warehouse $i"
             this[Warehouses.city] = "City ${i % 3}"
         }.map { it[Warehouses.id] }
-        Products.batchInsert((1..1000).toList()) { i ->
+        val productIds = Products.batchInsert((1..1000).toList()) { i ->
             this[Products.sku] = "SKU-$i"
             this[Products.name] = "Product $i"
             this[Products.description] = "Description of product $i"
@@ -80,6 +81,10 @@ open class DbState {
             this[Products.status] = Status.entries[i % 3]
             this[Products.code] = kotlin.uuid.Uuid.random()
             this[Products.warehouseId] = warehouseIds[i % warehouseIds.size]
+        }.map { it[Products.id] }
+        Stocks.batchInsert((1..2000).toList()) { i ->
+            this[Stocks.productId] = productIds[i % productIds.size]
+            this[Stocks.qty] = i % 100
         }
     }
 }
@@ -110,19 +115,23 @@ open class FilterBenchmarks {
     @Benchmark
     @OperationsPerInvocation(BUILD_OPS)
     fun a2_library_buildSql(s: DbState, bh: Blackhole) = s.repeatInTx(BUILD_OPS, bh) {
-        s.scenario.base().applyFiltersOn(s.scenario.source, s.scenario.request).sql()
+        s.scenario.base().applyFiltersOn(s.scenario.source, s.scenario.request, s.scenario.options).sql()
     }
 
     @Benchmark
     @OperationsPerInvocation(BUILD_OPS)
     fun a3_library_cachedMap_buildSql(s: DbState, bh: Blackhole) = s.repeatInTx(BUILD_OPS, bh) {
-        s.scenario.base().applyFilters(s.cachedMap, s.scenario.request).sql()
+        s.scenario.base().applyFilters(s.cachedMap, s.scenario.request, s.scenario.options).sql()
     }
 
     @Benchmark
     @OperationsPerInvocation(BUILD_OPS)
     fun b_library_parseBuildSql(s: DbState, bh: Blackhole) = s.repeatInTx(BUILD_OPS, bh) {
-        s.scenario.base().applyFiltersOn(s.scenario.source, parseFilterRequestOrNull(s.scenario.json)).sql()
+        s.scenario.base().applyFiltersOn(
+            s.scenario.source,
+            parseFilterRequestOrNull(s.scenario.json),
+            s.scenario.options,
+        ).sql()
     }
 
     @Benchmark
@@ -134,7 +143,11 @@ open class FilterBenchmarks {
     @Benchmark
     @OperationsPerInvocation(EXEC_OPS)
     fun c2_library_execute(s: DbState, bh: Blackhole) = s.repeatInTx(EXEC_OPS, bh) {
-        s.scenario.base().applyFiltersOn(s.scenario.source, parseFilterRequestOrNull(s.scenario.json)).toList()
+        s.scenario.base().applyFiltersOn(
+            s.scenario.source,
+            parseFilterRequestOrNull(s.scenario.json),
+            s.scenario.options,
+        ).toList()
     }
 }
 

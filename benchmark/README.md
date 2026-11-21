@@ -32,7 +32,8 @@ makes them diverge, the run fails instead of comparing different queries.
 | `ReflectionBenchmarks` | `propertyToColumnMap()` and JSON parsing in isolation. |
 
 Scenarios: `SIMPLE_EQ`, `AND_4_FIELDS`, `OR_NOT_IN_BETWEEN`, `NESTED_REF` (`warehouseId.name` → `EXISTS`)
-on a `Table`; `JOIN_COLUMNS` (plain join, fields by SQL name) and `STOCK_COMPUTED` (grouped subquery alias
+on a `Table`; `NESTED_REF_2_HOPS` (`productId.warehouseId.name` on `Stocks`, two nested `EXISTS`, run with
+`FilterOptions(maxReferenceHops = 2)`); `JOIN_COLUMNS` (plain join, fields by SQL name) and `STOCK_COMPUTED` (grouped subquery alias
 joined to a table, filter on a computed `total`).
 
 When adding a feature with its own resolution path, add a scenario for it here.
