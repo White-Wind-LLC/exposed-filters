@@ -38,17 +38,35 @@ internal fun hierarchyPredicate(
     require(expr is Column<*>) { "IN_HIERARCHY requires a table column: '$fieldName'" }
     // An alias or subquery column is a clone without `referee`: resolve the tree on the column it
     // projects, but keep comparing against the clone, which is what the outer query can see.
-    val hierarchy = resolveHierarchy(expr.originalColumn(), fieldName)
-    require(hierarchy.parentColumn.table == hierarchy.idColumn.table) {
-        "IN_HIERARCHY on field '$fieldName': parent column " +
-            "${hierarchy.parentColumn.table.tableName}.${hierarchy.parentColumn.name} is not on the tree's table " +
-            hierarchy.idColumn.table.tableName
-    }
+    val hierarchy = resolveCheckedHierarchy(expr.originalColumn(), fieldName)
     if (raws.isEmpty()) return Op.FALSE
     val anchor = context(options.copy(normalizedStringFields = emptySet())) {
         inListValue(hierarchy.idColumn, raws, fieldName)
     }
     return HierarchyInOp(expr, hierarchy, anchor)
+}
+
+/**
+ * The tree an `IN_HIERARCHY` filter on [column] compares against, for a consumer that must check a value
+ * against exactly that tree. The column is resolved as the filter resolves it, through [options]; a column
+ * of a table alias or subquery is resolved on the column it projects.
+ *
+ * @throws IllegalStateException when no tree, or more than one, can be derived for [column].
+ * @throws IllegalArgumentException when the resolved parent column is not on the tree's table.
+ */
+public fun Column<*>.filterHierarchy(options: FilterOptions = DefaultFilterOptions): HierarchyInfo =
+    context(options) { resolveCheckedHierarchy(originalColumn(), name) }
+
+/** [resolveHierarchy] plus the check that the parent link is on the tree's own table. */
+context(options: FilterOptions)
+internal fun resolveCheckedHierarchy(column: Column<*>, fieldName: String): HierarchyInfo {
+    val hierarchy = resolveHierarchy(column, fieldName)
+    require(hierarchy.parentColumn.table == hierarchy.idColumn.table) {
+        "IN_HIERARCHY on field '$fieldName': parent column " +
+            "${hierarchy.parentColumn.table.tableName}.${hierarchy.parentColumn.name} is not on the tree's table " +
+            hierarchy.idColumn.table.tableName
+    }
+    return hierarchy
 }
 
 /**
