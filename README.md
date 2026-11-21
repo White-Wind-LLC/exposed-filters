@@ -510,9 +510,11 @@ containers.document_type IS NOT NULL AND containers.document_type = ? AND EXISTS
 
 `resolveFilterField` resolves a field exactly as filtering does, without building SQL or reading rows. It returns
 every hop with its reference column, target, the table it reads (`occurrence`, possibly an alias) and `tables`, the
-original tables its subquery reads. Use it to check each hop (read access to each table, an allow-list of fields, a
-depth limit of your own) with the library's own resolution rules, or to report which stored filters a new rule would
-refuse.
+original tables its subquery reads: the target table and every table of a projection's source, joins flattened and
+every statement of a union included. Tables read only by a scalar subquery inside a projection's expression, or inside
+the `WHERE` of a subquery the source reads, are not listed. Use it to check each hop (read access to each table, an
+allow-list of fields, a depth limit of your own) with the library's own resolution rules, or to report which stored
+filters a new rule would refuse.
 
 ```kotlin
 val resolved = Orders.resolveFilterField("customerId.regionId.name", options)

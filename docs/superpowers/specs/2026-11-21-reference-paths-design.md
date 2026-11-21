@@ -235,7 +235,9 @@ public fun Column<*>.filterHierarchy(options: FilterOptions = DefaultFilterOptio
 ```
 
 - `tables` lists the target table and every table of the projection's source: joins flattened, aliases unwrapped to
-  their tables, a `QueryAlias` contributing the tables of its query's source. A consumer checks read access to each.
+  their tables, a `QueryAlias` contributing the tables its query reads (every statement of a set operation). A consumer
+  checks read access to each. Tables read only by a scalar subquery inside a projection's expression, or inside the
+  `WHERE` of a subquery the source reads, are not listed.
 - `filterHierarchy` exposes the tree the library compares an `IN_HIERARCHY` column against, so a consumer checks the
   tree of `expression` without re-implementing the detection. Its failures stay what they are today.
 - The `ColumnSet` variant applies the same ambiguity check as `applyFiltersOn`.

@@ -255,6 +255,55 @@ class FilterPathResolutionTest {
     }
 
     @Test
+    fun `a subquery projection over set operations reads the tables of every statement`() {
+        val db = Database.connect("jdbc:h2:mem:fp_set_${System.nanoTime()};DB_CLOSE_DELAY=-1", "org.h2.Driver")
+        // Exposed takes a set operation's fields from its first statement; the other statements read tables too.
+        val names = transaction(db) {
+            FpRegions.select(FpRegions.id, FpRegions.name)
+                .union(FpRegionTranslations.select(FpRegionTranslations.regionId, FpRegionTranslations.name))
+                .union(FpCategories.select(FpCategories.id, FpCategories.name))
+                .alias("names")
+        }
+        val options = projecting(FpRegions, "name") {
+            NestedFieldProjection(names, expression = names[FpRegions.name], idExpression = names[FpRegions.id])
+        }
+
+        val hop = FpCustomers.resolveFilterField("regionId.name", options).hops.single()
+
+        assertEquals(listOf(FpRegions, FpRegionTranslations, FpCategories), hop.tables)
+    }
+
+    @Test
+    fun `a set operation joined into a projection's source reads the tables of every statement`() {
+        val db = Database.connect("jdbc:h2:mem:fp_set_join_${System.nanoTime()};DB_CLOSE_DELAY=-1", "org.h2.Driver")
+        val names = transaction(db) {
+            FpRegionTranslations.select(FpRegionTranslations.regionId, FpRegionTranslations.name)
+                .union(FpCategories.select(FpCategories.id, FpCategories.name))
+                .alias("names")
+        }
+        val source = FpRegions.join(names, JoinType.LEFT, FpRegions.id, names[FpRegionTranslations.regionId])
+        val options = projecting(FpRegions, "name") { NestedFieldProjection(source, names[FpRegionTranslations.name]) }
+
+        val hop = FpCustomers.resolveFilterField("regionId.name", options).hops.single()
+
+        assertEquals(listOf(FpRegions, FpRegionTranslations, FpCategories), hop.tables)
+    }
+
+    @Test
+    fun `a target the reference resolver gives as an alias is listed as its table`() {
+        val o = FpOrders.alias("o")
+        val options = deep.copy(
+            referenceResolver = { if (it == FpCustomers.lastOrderId) ReferenceInfo(o[FpOrders.id], o) else null },
+        )
+
+        val hop = FpCustomers.resolveFilterField("lastOrderId.number", options).hops.single()
+
+        assertSame(o, hop.occurrence)
+        assertEquals(listOf<Table>(FpOrders), hop.tables)
+        assertFalse(hop.tables.single() is Alias<*>)
+    }
+
+    @Test
     fun `the hop after a projection follows its expression and is aliased only by names its source binds`() {
         val o2 = FpOrders.alias("o2")
         val options = projecting(FpOrders, "customerId") {

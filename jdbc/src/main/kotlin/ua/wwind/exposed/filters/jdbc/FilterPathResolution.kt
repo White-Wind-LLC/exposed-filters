@@ -11,6 +11,7 @@ import org.jetbrains.exposed.v1.core.JsonColumnMarker
 import org.jetbrains.exposed.v1.core.QueryAlias
 import org.jetbrains.exposed.v1.core.Table
 import org.jetbrains.exposed.v1.core.alias
+import org.jetbrains.exposed.v1.jdbc.SetOperation
 import ua.wwind.exposed.filters.jdbc.FilterPathException.Reason
 import java.util.Collections
 import java.util.IdentityHashMap
@@ -59,7 +60,9 @@ public data class ResolvedFilterField(
  * @property expression What this hop reads: the projection's expression, or the target's column as
  * [occurrence] exposes it.
  * @property tables The tables this hop reads, aliases unwrapped: the target table and every table of
- * the projection's source.
+ * the projection's source — joins flattened, and for a subquery the tables its query reads, every
+ * statement of a set operation included. Tables read only by a scalar subquery inside the projection's
+ * expression, or inside a subquery's conditions, are not listed.
  */
 public data class ResolvedHop(
     public val segment: String,
@@ -271,7 +274,7 @@ private fun enterTarget(
         source = projection?.source ?: occurrence,
         idExpression = idExpression,
         expression = expression,
-        tables = (listOf(target) + projection?.source?.readTables().orEmpty()).distinct(),
+        tables = (target.readTables() + projection?.source?.readTables().orEmpty()).distinct(),
     )
 }
 
@@ -360,14 +363,24 @@ private fun ColumnSet.columnTableNames(): Set<String> = columns.mapTo(LinkedHash
 
 /**
  * The tables a query reading this source reads, aliases unwrapped: a table itself, the parts of a
- * join, and the tables a subquery's own source reads.
+ * join, and the tables a subquery reads. Tables read only by a scalar subquery inside an expression
+ * or a condition are not among them.
  */
 internal fun ColumnSet.readTables(): List<Table> = when (this) {
     is Alias<*> -> delegate.readTables()
     is Table -> listOf(this)
-    is QueryAlias -> query.set.source.readTables()
+    is QueryAlias -> query.readTables()
     is Join -> flattenSources()?.flatMap { it.readTables() } ?: columnTables()
     else -> columnTables()
 }.distinct()
+
+/**
+ * The tables this query reads from: every statement of a set operation — whose own source is only its
+ * first statement's — and otherwise its source's tables.
+ */
+internal fun AbstractQuery<*>.readTables(): List<Table> = when (this) {
+    is SetOperation -> (firstStatement.readTables() + secondStatement.readTables()).distinct()
+    else -> set.source.readTables()
+}
 
 private fun ColumnSet.columnTables(): List<Table> = columns.map { it.table }.distinct().flatMap { it.readTables() }

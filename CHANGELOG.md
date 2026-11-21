@@ -21,7 +21,8 @@ All notable changes to this project will be documented in this file.
   it is now aliased and correct. Names starting with `ef_` are reserved.
 - JDBC: new `resolveFilterField` (on `ColumnSet` and on an expression map) returns the resolved path as
   `ResolvedFilterField` and `ResolvedHop` without building SQL, so a consumer checks every hop (read access to each
-  table in `ResolvedHop.tables`, an allow-list of fields, a depth limit) by the library's own rules. New
+  table in `ResolvedHop.tables`, which lists the target and every table of a projection's source, every statement of a
+  union included; an allow-list of fields; a depth limit) by the library's own rules. New
   `Column<*>.filterHierarchy` exposes the tree an `IN_HIERARCHY` column is compared against.
 - JDBC: new `FilterPathException`, an `IllegalArgumentException` with the field, segment index, segment and a `Reason`.
   **Behavior change**: path failures that threw `IllegalStateException` (an unknown base of a dotted path, an unknown
